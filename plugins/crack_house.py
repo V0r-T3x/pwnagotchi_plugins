@@ -6,7 +6,7 @@
 # https://github.com/c-nagy/pwnagotchi-educational-purposes-only-plugin/blob/main/educational-purposes-only.py
 # 
 # display-password.py
-# @abros0000
+# by @abros0000
 # https://github.com/abros0000/pwnagotchi-display-password-plugin/blob/master/display-password.py
 #
 # If their is no cracked network nearby the plugins show the last cracked password by wpa-sec
