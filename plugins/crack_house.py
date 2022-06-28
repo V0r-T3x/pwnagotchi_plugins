@@ -10,10 +10,11 @@
 # https://github.com/abros0000/pwnagotchi-display-password-plugin/blob/master/display-password.py
 #
 # If their is no cracked network nearby the plugins show the last cracked password by wpa-sec
-# If a cracked networks are nearby it will she the nearest on the screen
+# If cracked networks are nearby it will she the nearest on the screen
+# It can show time from the last wifi update and the number of cracked networks nearby on the total number of cracked networks ('display_stats' option)
 #
-# inside config.toml:
-# 
+# Inside config.toml:
+# ```
 # main.plugins.crack_house.enabled = true
 # main.plugins.crack_house.orientation = "vertical"
 # main.plugins.crack_house.files = [
@@ -23,7 +24,7 @@
 # ]
 # main.plugins.crack_house.saving_path = '/root/handshakes/crackhouse.potfile'
 # main.plugins.crack_house.display_stats = true
-#
+# ```
 # The plugin manage .potfile from wpa-sec & .cracked from OnlineHashCrack
 # .potfile 
 # BSSID:STAMAC:ESSID:password
