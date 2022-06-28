@@ -54,20 +54,35 @@ class CrackHouse(plugins.Plugin):
     __description__ = 'A plugin to display closest cracked network & it password'
     
     def on_loaded(self):
-        logging.info(self.options['display_stats'])
         global READY
         global CRACK_MENU
         tmp_line = ''
         tmp_list = list()
-        crack_line = list()        
+        crack_line = list() 
+        clist = list()       
 
 #       loop to retreive all passwords of all files into a big list without dulicate
         for file_path in self.options['files']:
-            with open(file_path) as f:
-                for line in f:
-                    tmp_line = str(line.rstrip().split(':',2)[-1:])[2:-2]
-                    tmp_list.append(tmp_line)
-        CRACK_MENU = list(set(tmp_list))
+            if file_path.lower().endswith('.potfile'):
+                with open(file_path) as f:
+                    for line in f:
+                        tmp_line = str(line.rstrip().split(':',2)[-1:])[2:-2]
+                        tmp_list.append(tmp_line)
+            elif file_path.lower().endswith('.cracked'):
+                with open(file_path) as f:
+                    for line in f:
+                        tmp_first = str(line.rstrip().split(',')[:3][1:-1])[3:-3]
+                        tmp_last = str(line.rstrip().split(',')[3:][1:-1])[3:-3]
+                        tmp_line = '%s:%s' % (tmp_first, tmp_last)
+                        tmp_list.append(tmp_line)
+            else:
+                logging.info('[CRACK HOUSE] %s type is not managed' % (os.path.splitext(file_path))) 
+            
+#        logging.info(str(tmp_list))
+        for line in tmp_list:
+            if line.rstrip().split(':')[1] != '':
+                clist.append(line)
+        CRACK_MENU = list(set(clist))
 #       write all name:password inside a file as backup for the run
         with open(self.options['saving_path'], 'w') as f:
             for crack in CRACK_MENU:
@@ -159,6 +174,7 @@ class CrackHouse(plugins.Plugin):
         global BEST_CRACK
         near_rssi = str(BEST_RSSI)
 
+        time_now = str(time.strftime("%H:%M", time.localtime()))
         if BEST_RSSI != -1000:
             if self.options['orientation'] == "vertical":
                 msg_ch = str(BEST_CRACK[0] + '(' + near_rssi + ')'  + '\n' + BEST_CRACK[1])
@@ -172,6 +188,6 @@ class CrackHouse(plugins.Plugin):
                         "%s" % (os.popen(last_line).read().rstrip()))
 
         if self.options['display_stats']:
-            msg_stats = '%d/%d' % (TOTAL_CRACK, len(CRACK_MENU))
+            msg_stats = '(%s)%d/%d' % (time_now, TOTAL_CRACK, len(CRACK_MENU))
             ui.set('crack_house_stats',
                         '%s' % (msg_stats))
