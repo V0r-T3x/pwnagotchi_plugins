@@ -19,11 +19,16 @@
 # main.plugins.crack_house.files = [
 #  '/root/handshakes/wpa-sec.cracked.potfile',
 #  '/root/handshakes/my.potfile',
-#  '/root/handshakes/OnlineHashCrack.potfile',
+#  '/root/handshakes/OnlineHashCrack.cracked',
 # ]
 # main.plugins.crack_house.saving_path = '/root/handshakes/crackhouse.potfile'
 # main.plugins.crack_house.display_stats = true
 #
+# The plugin manage .potfile from wpa-sec & .cracked from OnlineHashCrack
+# .potfile 
+# BSSID:STAMAC:ESSID:password
+# .cracked
+# datetime,ESSID,BSSID,STAMAC,password,note
 
 from pwnagotchi.ui.components import LabeledValue
 from pwnagotchi.ui.view import BLACK
