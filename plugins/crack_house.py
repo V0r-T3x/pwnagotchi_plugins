@@ -163,15 +163,15 @@ class CrackHouse(plugins.Plugin):
                     tmp_crack = crack.rstrip().split(':')
                     tc = str(tmp_crack[0])
                     if hn == tc:
-                        logging.info('[CRACK HOUSE] %s, pass: %s, RSSI: %d' % (tmp_crack[0], tmp_crack[1], ssi))
+                        #logging.info('[CRACK HOUSE] %s, pass: %s, RSSI: %d' % (tmp_crack[0], tmp_crack[1], ssi))
                         count_crack += 1
-                        logging.info(count_crack)
+                        #logging.info(count_crack)
                         if ssi > BEST_RSSI:
                             BEST_RSSI = ssi
                             BEST_CRACK = tmp_crack
             TOTAL_CRACK = count_crack
-            logging.info(TOTAL_CRACK)
-            logging.info('\n !!!! BEST CRACK HOUSE !!!! \n [CRACK HOUSE] %s, pass: %s, RSSI: %d' % (BEST_CRACK[0], BEST_CRACK[1], BEST_RSSI))
+            #logging.info(TOTAL_CRACK)
+            #logging.info('\n !!!! BEST CRACK HOUSE !!!! \n [CRACK HOUSE] %s, pass: %s, RSSI: %d' % (BEST_CRACK[0], BEST_CRACK[1], BEST_RSSI))
 
     def on_ui_update(self, ui):
         global CRACK_MENU
