@@ -53,6 +53,8 @@ BEST_CRACK = ['']
 
 TOTAL_CRACK = 0
 
+TIME_WIFI_UPDATE = '00:00'
+
 class CrackHouse(plugins.Plugin):
     __author__ = '@V0rT3x'
     __version__ = '1.0.0'
@@ -150,8 +152,10 @@ class CrackHouse(plugins.Plugin):
         global TOTAL_CRACK
         global BEST_RSSI
         global BEST_CRACK
+        global TIME_WIFI_UPDATE
         tmp_crack = list()
-        logging.info("[CRACK HOUSE] Total cracks: %d" % (len(CRACK_MENU)))
+        TIME_WIFI_UPDATE = str(time.strftime("%H:%M", time.localtime()))
+        #logging.info("[CRACK HOUSE] Total cracks: %d" % (len(CRACK_MENU)))
 
         if READY == 1 and "Not-Associated" in os.popen('iwconfig wlan0').read():
             BEST_RSSI = -1000
@@ -178,9 +182,10 @@ class CrackHouse(plugins.Plugin):
         global TOTAL_CRACK
         global BEST_RSSI
         global BEST_CRACK
+        global TIME_WIFI_UPDATE
         near_rssi = str(BEST_RSSI)
 
-        time_now = str(time.strftime("%H:%M", time.localtime()))
+
         if BEST_RSSI != -1000:
             if self.options['orientation'] == "vertical":
                 msg_ch = str(BEST_CRACK[0] + '(' + near_rssi + ')'  + '\n' + BEST_CRACK[1])
@@ -194,6 +199,6 @@ class CrackHouse(plugins.Plugin):
                         "%s" % (os.popen(last_line).read().rstrip()))
 
         if self.options['display_stats']:
-            msg_stats = '(%s)%d/%d' % (time_now, TOTAL_CRACK, len(CRACK_MENU))
+            msg_stats = '(%s)%d/%d' % (TIME_WIFI_UPDATE, TOTAL_CRACK, len(CRACK_MENU))
             ui.set('crack_house_stats',
                         '%s' % (msg_stats))
