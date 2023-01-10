@@ -76,7 +76,6 @@ class PiSugar3(plugins.Plugin):
         chg = self.ups.charge()
         ui.set('bat', "%2i%%" % capacity)
         ui.set('chg', "%s" % chg)
-        logging.info("%s" % chg)
         if capacity <= self.options['shutdown']:
             logging.info('[pisugar3] Empty battery (<= %s%%): shuting down' % self.options['shutdown'])
             ui.update(force=True, new_data={'status': 'Battery exhausted, bye ...'})
