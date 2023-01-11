@@ -28,12 +28,17 @@ class PwnClock(plugins.Plugin):
 
         if ui.is_waveshare_v2():
             pos = (130, 80) if memenable else (200, 80)
-            ui.add_element('clock', LabeledValue(color='lime', label='', value='-/-/-\n-:--',
+            ui.add_element('clock', LabeledValue(color='BLACK', label='', value='-/-/-\n-:--',
+                                                 position=pos,
+                                                 label_font=fonts.Small, text_font=fonts.Small))
+        if ui.is_waveshare_v3():
+            pos = (130, 80) if memenable else (200, 80)
+            ui.add_element('clock', LabeledValue(color='BLACK', label='', value='-/-/-\n-:--',
                                                  position=pos,
                                                  label_font=fonts.Small, text_font=fonts.Small))
         if ui.is_lcdhat():
             pos = (91, 0) if memenable else (220, 18)
-            ui.add_element('clock', LabeledValue(color='lime', label='', value='-/-/- -:--',
+            ui.add_element('clock', LabeledValue(color='BLACK', label='', value='-/-/- -:--',
                                                  position=pos,
                                                  label_font=fonts.Small, text_font=fonts.Small))
     def on_ui_update(self, ui):
