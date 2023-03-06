@@ -32,7 +32,7 @@ class UPS:
             is_charging = self._bus.read_byte_data(0x57, 0x02)
             #124 unplugged
             #252 plugged
-            if is_charging == 252 : chg = 'âš¡'
+            if is_charging >= 200 : chg = 'âš¡'
             return chg
         except:
             return chg
