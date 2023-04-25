@@ -80,13 +80,11 @@ class fix_region(plugins.Plugin):
         logging.info('[FIX_REGION] plugin loaded')
 
         if not os.path.exists(SH_PATH):
-            os.system('rm '+SH_PATH)
             file = open(SH_PATH, "w")
             file.write(NETFIX_SH+REGION)
             file.close()
             os.system('chmod +x '+SH_PATH)
         if not os.path.exists(SERV_PATH):
-            os.system('rm '+SERV_PATH)
             file = open(SERV_PATH, "w")
             file.write(NETFIX_SERV)
             file.close()
