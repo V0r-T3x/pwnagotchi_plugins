@@ -1,3 +1,4 @@
+# plugin cloned from wpa-sec plugin by Dadav (33197631+dadav@users.noreply.github.com)
 # To get the api_key for banthed go there: https://banthex.de/index.php/register/
 # Create an account, connect to the site and go there: https://banthex.de/index.php/wpa-psk-auditor/
 # you will be able to generate an api_key as wpa-sec
@@ -24,7 +25,7 @@ from json.decoder import JSONDecodeError
 
 
 class Banthex(plugins.Plugin):
-    __author__ = '33197631+dadav@users.noreply.github.com'
+    __author__ = 'V0r-T3x'
     __version__ = '2.1.0'
     __license__ = 'GPL3'
     __description__ = 'This plugin automatically uploads handshakes to https://banthex.de/wpa'
