@@ -1,4 +1,4 @@
-# 2024
+# 2024, discord.py==2.4.0
 # discord.py need to be installed
 # pip install -U discord.py --break-system-packages
 # 
