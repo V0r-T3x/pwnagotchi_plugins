@@ -67,9 +67,13 @@ SH_PATH = '/root/network-fix.sh'
 class fix_region(plugins.Plugin):
     __name__ = 'Fix_Region'
     __author__ = '@V0rT3x https://github.com/V0r-T3x'
-    __version__ = '1.0'
+    __version__ = '1.0.0.1'
     __license__ = 'GPL3'
     __description__ = 'Let you change the iw region to unlock channel'
+    __defaults__ = {
+        "enabled": False,
+        "region": "US",
+    }
 
     def __init__(self):
         self.ready = False
@@ -104,3 +108,7 @@ class fix_region(plugins.Plugin):
         os.system('rm '+SH_PATH)
         os.system('sudo systemctl stop network-fix')
         os.system('sudo systemctl disable network-fix')
+
+    def on_webhook(self, path, request):
+        # maybe provide more info, but this is ok for now
+        return f"<html><head><title>fix_region</title></head><body><p>Current Region: {REGION}</p></body></html>"
