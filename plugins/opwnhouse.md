@@ -36,6 +36,16 @@ The plugin injects a robust interface into the Pwnagotchi web UI (`/plugins/opwn
 *   **GPS Integration:** Correlates BSSIDs with Pwnagotchi's `.gps.json` files to enrich the database with location data.
 *   **Interoperability:** Automatically generates `.pcap.cracked` marker files when a password is found, ensuring compatibility with other tools like `webgpsmap`.
 
+### 4. Hunter Mode (Hot/Cold Game)
+Turn your Pwnagotchi into a proximity tracker for cracked networks!
+*   **Real-time Feedback:** Tracks RSSI trends to guide you toward the signal source.
+    *   **HOTTER 🔥:** Signal improved by ≥ 4dB (you are getting closer).
+    *   **COLDER 🥶:** Signal dropped by ≥ 4dB (you are moving away).
+    *   **STEADY:** Signal is stable.
+*   **Visuals:**
+    *   **Device Screen:** Displays "HOT!" or "COLD!" indicators next to the network info.
+    *   **Web UI:** The Proximity table includes a "Trend" column with colorful status indicators.
+
 ---
 
 ## User Configurations
@@ -49,6 +59,7 @@ The plugin can be configured via the Web UI or by adding the following keys to `
 | `main.plugins.opwnhouse.enabled` | Boolean | `false` | Enables or disables the plugin. |
 | `main.plugins.opwnhouse.orientation` | String | `"vertical"` | Sets the text layout on the screen. <br>**Values:** `"vertical"`, `"horizontal"`. |
 | `main.plugins.opwnhouse.display_stats` | Boolean | `false` | If `true`, displays the counter of nearby/total cracked networks (e.g., "3/50"). |
+| `main.plugins.opwnhouse.hunter_mode` | Boolean | `false` | Enables "Hot/Cold" feedback for signal tracking. |
 | `main.plugins.opwnhouse.position` | List/String | *Varies* | X, Y coordinates for the main text (ESSID/Password). <br>**Example:** `[0, 91]` or `"0, 91"`. |
 | `main.plugins.opwnhouse.stats_position` | List/String | *Varies* | X, Y coordinates for the stats counter. <br>**Example:** `[0, 61]` or `"0, 61"`. |
 | `main.plugins.opwnhouse.custom_dir` | String | `""` | Path to an additional directory to scan for handshake/potfiles. |
