@@ -1325,7 +1325,6 @@ class BTLeash(plugins.Plugin):
         if not self.ready:
             return
         with ui._lock:
-            status = "BT Conn. down"
             # Default state
             ui.set("bluetooth", "D")
             
@@ -1339,7 +1338,6 @@ class BTLeash(plugins.Plugin):
                     != -1
                 ):
                     ui.set("bluetooth", "U")
-                    status = "BT Conn. up"
             except Exception:
                 pass # Connection down or not found
 
@@ -1354,16 +1352,11 @@ class BTLeash(plugins.Plugin):
                     != -1
                 ):
                     ui.set("bluetooth", "C")
-                    status += "\nBT dev conn."
                 else:
                     ui.set("bluetooth", "-")
-                    status += "\nBT dev disconn."
             except Exception as e:
                 ui.set("bluetooth", "-")
-                status += "\nBT dev disconn."
             
-            ui.set("status", status)
-
     def on_webhook(self, path, request):
         if path == "status":
             bluetooth, device, connection, paired_devices = self.get_current_status()
