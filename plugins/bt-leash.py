@@ -1234,6 +1234,17 @@ class BTLeash(plugins.Plugin):
             return
         dns = re.sub("[\s,;]+", " ", dns).strip()  # DNS cleaning
 
+        pairing_triggered = False
+        try:
+            info = self.bluetoothctl(["info", self.mac], log_error=False)
+            if "Paired: yes" not in info.stdout:
+                logging.info(f"[BT-Tether] Phone {self.mac} not paired. Initiating pairing...")
+                pairing_triggered = True
+                if not self.pairing_in_progress:
+                    threading.Thread(target=self._pair_phone_thread, args=(self.mac, 'phone')).start()
+        except Exception as e:
+            logging.error(f"[BT-Tether] Error checking pairing status: {e}")
+
         try:
             # To ensure a clean state, we'll delete the connection if it exists.
             try:
@@ -1281,16 +1292,28 @@ class BTLeash(plugins.Plugin):
             self.error_message = f"Error while configuring with nmcli: {e}"
             logging.error(f"[BT-Tether] {self.error_message}")
             return
-        try:
-            time.sleep(5)  # Give some delay to configure before going up
-            self.nmcli(["connection", "up", f"{self.phone_name}"], log_error=False)
-        except Exception as e:
-            # This error might be normal if the phone is not yet available
-            self.error_message = f"Failed to connect to device: {e}"
-            logging.debug(f"[BT-Tether] {self.error_message}")
-            logging.error(
-                f"[BT-Tether] Failed to connect to device: have you enabled bluetooth tethering on your phone?"
-            )
+        if not pairing_triggered:
+            if not pairing_triggered:
+                try:
+                    logging.info(f"[BT-Tether] Scanning for {self.mac}...")
+                    try:
+                        scan_proc = subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        for _ in range(20):
+                            time.sleep(1)
+                            devices = self.bluetoothctl(["devices"], log_error=False)
+                            if self.mac.upper() in devices.stdout.upper():
+                                break
+                        scan_proc.terminate()
+                    except Exception:
+                        pass
+                    self.nmcli(["connection", "up", f"{self.phone_name}"], log_error=False)
+                except Exception as e:
+                    # This error might be normal if the phone is not yet available
+                    self.error_message = f"Failed to connect to device: {e}"
+                    logging.debug(f"[BT-Tether] {self.error_message}")
+                    logging.error(
+                        f"[BT-Tether] Failed to connect to device: have you enabled bluetooth tethering on your phone?"
+                    )
 
     def on_ready(self, agent):
         try:
