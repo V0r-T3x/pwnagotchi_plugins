@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import re
 import time
@@ -359,6 +360,12 @@ TEMPLATE = """
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="hidden" name="action" value="disconnect"/>
                 <input type="submit" value="Disconnect" {% if not options.get('phone-name') %}disabled{% endif %}>
+            </form>
+            
+            <form method="POST" style="display:inline; margin-left: 5px;" onsubmit="submitAction(event, 'fix_bt')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="action" value="fix_bt"/>
+                <input type="submit" value="Fix BT (Soft Reset)" style="background-color: #ff9800; color: white; border: none; cursor: pointer;">
             </form>
         </div>
         
@@ -1141,6 +1148,73 @@ class BTLeash(plugins.Plugin):
             self.pairing_device_mac = None
             self.pairing_in_progress = False
 
+    def recover_bluetooth(self):
+        if self.pairing_in_progress:
+            logging.info("[BT-Tether] Pairing in progress, skipping recovery.")
+            return
+
+        logging.info("[BT-Tether] Attempting to recover crashed BT firmware...")
+        self.error_message = "Attempting to recover Bluetooth firmware..."
+        
+        def _recover():
+            try:
+                # 1. Stop high-level services
+                subprocess.run(["systemctl", "stop", "bluetooth"])
+                
+                # 2. Re-trigger the UART bus
+                uart_ids = []
+                base_path = "/sys/bus/amba/drivers/uart-pl011"
+                if os.path.exists(base_path):
+                    for item in os.listdir(base_path):
+                        if item.endswith(".serial"):
+                            uart_ids.append(item)
+                
+                if not uart_ids:
+                    # Common IDs for Pi Zero 2 W / Pi 3 / Pi 4
+                    uart_ids = ["3f201000.serial", "40001100.serial", "fe201000.serial"]
+
+                for uart_id in uart_ids:
+                    unbind_path = os.path.join(base_path, "unbind")
+                    bind_path = os.path.join(base_path, "bind")
+                    
+                    if os.path.exists(unbind_path):
+                        try:
+                            with open(unbind_path, "w") as f:
+                                f.write(uart_id)
+                            time.sleep(1)
+                        except Exception:
+                            pass
+
+                    if os.path.exists(bind_path):
+                        try:
+                            with open(bind_path, "w") as f:
+                                f.write(uart_id)
+                            logging.info(f"[BT-Tether] Reset UART {uart_id}")
+                        except Exception as e:
+                            logging.error(f"[BT-Tether] Bind {uart_id} failed: {e}")
+
+                # 3. Restart services
+                subprocess.run(["systemctl", "restart", "hciuart"])
+                time.sleep(2)
+                subprocess.run(["systemctl", "start", "bluetooth"])
+                time.sleep(2)
+                
+                # Re-power on adapter
+                self.bluetoothctl(["power", "on"])
+                self.error_message = "Bluetooth recovery completed."
+                logging.info("[BT-Tether] Bluetooth recovery completed.")
+                
+                # Re-establish connection if configured
+                if self.phone_name:
+                    time.sleep(5) # Wait for services to settle
+                    self.nmcli(["connection", "up", self.phone_name], log_error=False)
+                    
+            except Exception as e:
+                logging.error(f"[BT-Tether] Recovery failed: {e}")
+                self.error_message = f"Recovery failed: {e}"
+
+        threading.Thread(target=_recover).start()
+
     def get_current_status(self):
         bluetooth = "Not configured"
         if self.mac:
@@ -1504,6 +1578,10 @@ class BTLeash(plugins.Plugin):
                         self.error_message = f"Disconnected {mac}"
                     except Exception as e:
                         self.error_message = f"Error disconnecting: {e}"
+
+            elif action == "fix_bt":
+                self.recover_bluetooth()
+                self.error_message = "Bluetooth recovery started..."
 
             if path == "action":
                 return jsonify({'success': True, 'error': self.error_message})
