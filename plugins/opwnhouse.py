@@ -1150,7 +1150,7 @@ function updateProximityTable() {
             }
 
             if (currentViewMode === 'radar') {
-                generateRadar(filtered_aps, data.pwnagotchi_face);
+                generateRadar(filtered_aps, data.pwnagotchi_face, data.movement_bearing);
                 return;
             }
 
@@ -1219,7 +1219,7 @@ function updateProximityTable() {
         .catch(error => console.error('Error fetching proximity data:', error));
 }
 
-function generateRadar(aps, pwnFace) {
+function generateRadar(aps, pwnFace, bearing) {
     const container = document.getElementById('radar-scene-container');
     container.innerHTML = '';
     
@@ -1287,6 +1287,28 @@ function generateRadar(aps, pwnFace) {
     centerEl.style.fontWeight = 'bold';
     centerEl.innerText = pwnFace || '(◕‿‿◕)';
     container.appendChild(centerEl);
+
+    // Draw movement arrow if bearing is available
+    if (bearing !== null && bearing !== undefined) {
+        const arrow = document.createElement('div');
+        arrow.style.position = 'absolute';
+        arrow.style.width = '0';
+        arrow.style.height = '0';
+        arrow.style.borderLeft = '8px solid transparent';
+        arrow.style.borderRight = '8px solid transparent';
+        arrow.style.borderBottom = '16px solid #00ffff';
+        arrow.style.zIndex = '5';
+
+        const rad = bearing * (Math.PI / 180);
+        const r = maxRadius + 10;
+        const arrowX = centerX + r * Math.sin(rad);
+        const arrowY = centerY - r * Math.cos(rad);
+
+        arrow.style.left = `${arrowX}px`;
+        arrow.style.top = `${arrowY}px`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${bearing}deg)`;
+        container.appendChild(arrow);
+    }
 
     aps.forEach(net => {
         const minRssi = -95;
@@ -1367,6 +1389,7 @@ class OpwnHouse(plugins.Plugin):
         self._ref_rssi = None
         self._ref_bssid = None
         self._direction_text = '?'
+        self._movement_bearing = None
         self.total_nearby_cracked = 0
         self.last_wifi_update = '00:00'
         self.last_iwconfig_check = 0
@@ -1632,6 +1655,26 @@ class OpwnHouse(plugins.Plugin):
     def on_gps_update(self, agent, gps):
         with self.lock:
             if gps:
+                if self._current_gps:
+                    if isinstance(gps, dict):
+                        new_lat = gps.get('latitude', gps.get('Latitude', 0))
+                        new_lon = gps.get('longitude', gps.get('Longitude', 0))
+                    else:
+                        new_lat = getattr(gps, 'latitude', 0)
+                        new_lon = getattr(gps, 'longitude', 0)
+
+                    if isinstance(self._current_gps, dict):
+                        old_lat = self._current_gps.get('latitude', self._current_gps.get('Latitude', 0))
+                        old_lon = self._current_gps.get('longitude', self._current_gps.get('Longitude', 0))
+                    else:
+                        old_lat = getattr(self._current_gps, 'latitude', 0)
+                        old_lon = getattr(self._current_gps, 'longitude', 0)
+
+                    if new_lat != 0 and new_lon != 0 and (abs(new_lat - old_lat) > 0.00001 or abs(new_lon - old_lon) > 0.00001):
+                        _, self._movement_bearing = self._calculate_distance_bearing(
+                            {'latitude': old_lat, 'longitude': old_lon},
+                            {'latitude': new_lat, 'longitude': new_lon}
+                        )
                 self._current_gps = gps
 
     def _get_cardinal_direction(self, bearing):
@@ -2195,6 +2238,7 @@ class OpwnHouse(plugins.Plugin):
                     total_nearby_cracked_copy = self.total_nearby_cracked
                     total_cracked_copy = len(self.cracked_networks)
                     pwnagotchi_face_copy = self.pwnagotchi_face
+                    movement_bearing_copy = self._movement_bearing
 
                 formatted_aps = []
                 for ap in all_nearby_aps_copy:
@@ -2219,7 +2263,8 @@ class OpwnHouse(plugins.Plugin):
                     'pwnagotchi_face': pwnagotchi_face_copy,
                     'nearby_aps': formatted_aps,
                     'total_nearby_cracked': total_nearby_cracked_copy,
-                    'total_cracked': total_cracked_copy
+                    'total_cracked': total_cracked_copy,
+                    'movement_bearing': movement_bearing_copy
                 }
                 return jsonify(response_data)
             elif path == "config":
