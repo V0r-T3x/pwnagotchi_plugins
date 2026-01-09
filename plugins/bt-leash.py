@@ -445,6 +445,13 @@ TEMPLATE = """
         <p id="status-msg"><strong>Status:</strong> {{ error }}</p>
     </div>
     <hr/>
+    <div style="text-align: right; margin-bottom: 5px;">
+        <form method="POST" style="display:inline;" onsubmit="submitAction(event, 'refresh')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="action" value="refresh"/>
+            <input type="submit" value="Refresh Details">
+        </form>
+    </div>
     <input type="text" id="searchText" placeholder="Search for ..." title="Type in a filter">
     <table id="tableOptions">
         <tr>
@@ -495,10 +502,11 @@ class BTLeash(plugins.Plugin):
         self.ui_status = "-"
         self.stop_event = threading.Event()
         self.status_thread = None
+        self.refresh_thread = None
         self.status_cache = {
-            'bluetooth': "Not configured",
-            'device': "Not configured",
-            'connection': "Not configured",
+            'bluetooth': "Loading...",
+            'device': "Loading...",
+            'connection': "Loading...",
             'paired_devices': []
         }
         self.last_web_request = 0
@@ -526,7 +534,7 @@ class BTLeash(plugins.Plugin):
                     name = match.group(2)
                     
                     # Try to find existing metadata (like 'type') from options if available
-                    config_devices = self.options.get('paired-evices', [])
+                    config_devices = self.options.get('paired-devices', [])
                     existing_meta = next((d for d in config_devices if d['mac'] == mac), {})
                     
                     system_devices.append({
@@ -551,7 +559,6 @@ class BTLeash(plugins.Plugin):
                 'type': device_type,
                 'paired_at': str(datetime.datetime.now())
             }
-            d
             # Remove if already exists
             self.paired_devices = [d for d in self.paired_devices if d.get('mac') != mac]
             # Add new entry
@@ -1230,37 +1237,18 @@ class BTLeash(plugins.Plugin):
         threading.Thread(target=_recover).start()
 
     def _get_connected_macs_fast(self):
-        """
-        Get connected MAC addresses using filesystem checks only (Zero Overhead).
-        Avoids subprocess calls like hcitool which cause UI freezes.
-        """
+        """Extremely defensive read to prevent hanging during keyboard activity"""
         macs = set()
-        # Method 1: Check debugfs (covers all BT connections if available)
         try:
-            if os.path.exists('/sys/kernel/debug/bluetooth/hci0/conn'):
-                with open('/sys/kernel/debug/bluetooth/hci0/conn', 'r') as f:
-                    for line in f:
-                        # Format: <handle> <mac> <type> ...
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            # MAC is usually the second element
-                            if re.match(r'([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})', parts[1]):
-                                macs.add(parts[1].upper())
+            # Use a low-level open to avoid buffering delays
+            fd = os.open('/proc/bus/input/devices', os.O_RDONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, 'r') as f:
+                content = f.read()
+                found = re.findall(r'Uniq=([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})', content)
+                for m in found:
+                    macs.add(m.upper())
         except Exception:
-            pass
-            
-        # Method 2: Check input devices (covers Keyboards/Mice if debugfs fails)
-        try:
-            if os.path.exists('/proc/bus/input/devices'):
-                with open('/proc/bus/input/devices', 'r') as f:
-                    content = f.read()
-                    # Look for Uniq=XX:XX:XX:XX:XX:XX
-                    found = re.findall(r'Uniq=([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})', content)
-                    for m in found:
-                        macs.add(m.upper())
-        except Exception:
-            pass
-            
+            pass # Better to have no status than a frozen UI
         return macs
 
     def _status_worker(self):
@@ -1270,35 +1258,13 @@ class BTLeash(plugins.Plugin):
                 try:
                     # 1. Check for BNEP interface (indicates Bluetooth PAN connection)
                     # This avoids spawning subprocesses like hcitool/nmcli which cause UI freezes
-                    bnep_exists = False
-                    try:
-                        if os.path.exists('/sys/class/net'):
-                            for iface in os.listdir('/sys/class/net'):
-                                if iface.startswith('bnep'):
-                                    bnep_exists = True
-                                    break
-                    except Exception:
-                        pass
-
-                    if bnep_exists:
-                        # 2. Check Connectivity via Socket
-                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                        s.settimeout(0.1)
-                        try:
-                            s.connect((self.gateway, 53))
-                            new_status = "U"
-                        except Exception:
-                            new_status = "C"
-                        finally:
-                            s.close()
+                    # Optimized: Check specific path to avoid listdir overhead
+                    if os.path.exists('/sys/class/net/bnep0'):
+                        new_status = "U"
                     else:
-                        # 2. Check Bluetooth Link (Zero Overhead)
-                        # If not tethered, check if at least connected via BT
-                        connected_macs = self._get_connected_macs_fast()
-                        if self.mac.upper() in connected_macs:
-                            new_status = "C"
-                        else:
-                            new_status = "D"
+                        # Simplified: If not tethered, assume Disconnected in the UI
+                        # This avoids reading /proc/bus/input/devices in the background loop
+                        new_status = "D"
                 except Exception:
                     pass
                 self.ui_status = new_status
@@ -1311,14 +1277,56 @@ class BTLeash(plugins.Plugin):
                 except Exception as e:
                     logging.error(f"[BT-Tether] Error updating web cache: {e}")
             
-            time.sleep(5)
+            time.sleep(60)
+
+    def _refresh_detailed_info(self):
+        """Fetch detailed info once (Heavy operations)"""
+        logging.debug("[BT-Tether] Starting detailed info refresh (Heavy)")
+        try:
+            bluetooth = "Not configured"
+            if self.mac:
+                try:
+                    info_result = self.bluetoothctl(["info", self.mac], log_error=False)
+                    bluetooth = info_result.stdout.replace("\n", "<br>")
+                except Exception as e:
+                    bluetooth = f"Not visible yet or error: {str(e)}"
+
+            device = "Not configured"
+            if self.mac:
+                try:
+                    device_result = self.nmcli(["-w", "0", "device", "show", self.mac], log_error=False)
+                    device = device_result.stdout.replace("\n", "<br>")
+                except subprocess.CalledProcessError as e:
+                    if "not found" in str(e).lower():
+                        device = "Device not discovered by BlueZ yet (scan + pair first)"
+                    else:
+                        device = f"nmcli error: {str(e)}"
+                except Exception as e:
+                    device = f"Unexpected error: {str(e)}"
+
+            connection = "Not configured"
+            if self.phone_name:
+                try:
+                    connection_result = self.nmcli(["-w", "0", "connection", "show", self.phone_name], log_error=False)
+                    connection = connection_result.stdout.replace("\n", "<br>")
+                except subprocess.CalledProcessError as e:
+                    if "unknown connection" in str(e).lower() or "not found" in str(e).lower():
+                        connection = "Connection profile not created yet"
+                    else:
+                        connection = f"nmcli error: {str(e)}"
+                except Exception as e:
+                    connection = f"Unexpected error: {str(e)}"
+            
+            self.status_cache['bluetooth'] = bluetooth
+            self.status_cache['device'] = device
+            self.status_cache['connection'] = connection
+        except Exception as e:
+            logging.error(f"[BT-Tether] Error refreshing detailed info: {e}")
 
     def _update_web_cache(self):
-        # Optimized: Avoid heavy nmcli/bluetoothctl calls that freeze the UI
-        bluetooth = "Detailed info disabled to prevent UI freeze"
-        device = "Detailed info disabled to prevent UI freeze"
-        connection = "Detailed info disabled to prevent UI freeze"
-
+        # Optimized: Only update dynamic status (paired devices)
+        # Detailed info is handled by _refresh_detailed_info on page load
+        
         # Fast check for connected devices (Zero Overhead)
         connected_macs = self._get_connected_macs_fast()
 
@@ -1328,12 +1336,7 @@ class BTLeash(plugins.Plugin):
             device_info['connected'] = device_item['mac'].upper() in connected_macs
             devices_with_status.append(device_info)
 
-        self.status_cache = {
-            'bluetooth': bluetooth,
-            'device': device,
-            'connection': connection,
-            'paired_devices': devices_with_status
-        }
+        self.status_cache['paired_devices'] = devices_with_status
 
     def get_current_status(self):
         return (
@@ -1453,27 +1456,26 @@ class BTLeash(plugins.Plugin):
             logging.error(f"[BT-Tether] {self.error_message}")
             return
         if not pairing_triggered:
-            if not pairing_triggered:
+            try:
+                logging.info(f"[BT-Tether] Scanning for {self.mac}...")
                 try:
-                    logging.info(f"[BT-Tether] Scanning for {self.mac}...")
-                    try:
-                        scan_proc = subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        for _ in range(20):
-                            time.sleep(1)
-                            devices = self.bluetoothctl(["devices"], log_error=False)
-                            if self.mac.upper() in devices.stdout.upper():
-                                break
-                        scan_proc.terminate()
-                    except Exception:
-                        pass
-                    self.nmcli(["connection", "up", f"{self.phone_name}"], log_error=False)
-                except Exception as e:
-                    # This error might be normal if the phone is not yet available
-                    self.error_message = f"Failed to connect to device: {e}"
-                    logging.debug(f"[BT-Tether] {self.error_message}")
-                    logging.error(
-                        f"[BT-Tether] Failed to connect to device: have you enabled bluetooth tethering on your phone?"
-                    )
+                    scan_proc = subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    for _ in range(20):
+                        time.sleep(1)
+                        devices = self.bluetoothctl(["devices"], log_error=False)
+                        if self.mac.upper() in devices.stdout.upper():
+                            break
+                    scan_proc.terminate()
+                except Exception:
+                    pass
+                self.nmcli(["connection", "up", f"{self.phone_name}"], log_error=False)
+            except Exception as e:
+                # This error might be normal if the phone is not yet available
+                self.error_message = f"Failed to connect to device: {e}"
+                logging.debug(f"[BT-Tether] {self.error_message}")
+                logging.error(
+                    f"[BT-Tether] Failed to connect to device: have you enabled bluetooth tethering on your phone?"
+                )
 
     def on_ready(self, agent):
         try:
@@ -1508,11 +1510,9 @@ class BTLeash(plugins.Plugin):
             )
 
     def on_ui_update(self, ui):
-        if not self.ready:
-            return
-        if self.ui_status == self._prev_ui_status:
-            return
-        with ui._lock:
+        # This must be instant. 
+        # Do not add logic, if-statements, or I/O here.
+        if self.ui_status != self._prev_ui_status:
             ui.set("bluetooth", self.ui_status)
             self._prev_ui_status = self.ui_status
             
@@ -1645,11 +1645,22 @@ class BTLeash(plugins.Plugin):
             elif action == "fix_bt":
                 self.recover_bluetooth()
                 self.error_message = "Bluetooth recovery started..."
+            
+            elif action == "refresh":
+                if self.refresh_thread is None or not self.refresh_thread.is_alive():
+                    self.refresh_thread = threading.Thread(target=self._refresh_detailed_info)
+                    self.refresh_thread.start()
+                    self.error_message = "Refreshing details in background..."
+                else:
+                    self.error_message = "Refresh already in progress."
 
             if path == "action":
                 return jsonify({'success': True, 'error': self.error_message})
 
         if path == "/" or not path:
+            # Trigger detailed info refresh in background
+            logging.debug("[BT-Tether] WebUI page requested")
+            
             bluetooth, device, connection, _ = self.get_current_status()
 
             logging.debug(device)
