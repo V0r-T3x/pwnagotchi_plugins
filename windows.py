@@ -269,7 +269,7 @@ class FancyDisplay:
             cls._instance = super(FancyDisplay, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, enabled=False, fps=1, th_path='', mode='screen_saver', sub_mode='show_logo', config={}):
+    def __init__(self, enabled=False, fps=24, th_path='', mode='screen_saver', sub_mode='show_logo', config={}):
         self.enabled = enabled
         self.image_lock = threading.Lock()
         self.is_image_locked = False
@@ -861,7 +861,7 @@ class Windows(plugins.Plugin):
         self._pwny_root = os.path.dirname(pwnagotchi.__file__)
         self._plug_root = os.path.dirname(os.path.realpath(__file__))
         self.display_controller = None
-        self.fps = 1
+        self.fps = 24
         self._th_path = ''
         self._res = [128, 64]
         self._color_mode = ['P', 'P']
