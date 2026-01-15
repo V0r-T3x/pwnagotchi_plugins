@@ -257,16 +257,16 @@ window.onload = function() {
 
 # Use /dev/shm if available to avoid SD card wear and IO errors
 if os.path.exists('/dev/shm'):
-    FANCYDISPLAY = '/dev/shm/pwnagotchi/Windows.png'
+    WINDOWS = '/dev/shm/pwnagotchi/Windows.png'
 else:
-    FANCYDISPLAY = '/var/tmp/pwnagotchi/Windows.png'
+    WINDOWS = '/var/tmp/pwnagotchi/Windows.png'
 
-class FancyDisplay:
+class Window:
     _instance = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super(FancyDisplay, cls).__new__(cls)
+            cls._instance = super(Window, cls).__new__(cls)
         return cls._instance
 
     def __init__(self, enabled=False, fps=24, th_path='', mode='screen_saver', sub_mode='show_logo', config={}):
@@ -288,12 +288,13 @@ class FancyDisplay:
         self.current_screen_saver = sub_mode
         self.modes = ['screen_saver', 'auxiliary', 'terminal']
         self.screen_saver_modes = ['show_logo', 'moving_shapes', 'random_colors', 'hyper_drive', 'show_animation']
+        self.active_aux_plugin = None
         if config: self.screen_data = config
         else: self.screen_data = {}
         self.set_mode(mode, sub_mode)
 
     def _start_loop(self):
-        logging.info("[FancyDisplay] Starting the asyncio event loop in a new thread.")
+        logging.info("[Windows] Starting the asyncio event loop in a new thread.")
         asyncio.set_event_loop(self.loop)
         self.is_running_event.set()
         try:
@@ -305,7 +306,7 @@ class FancyDisplay:
             self.is_running_event.clear()
 
     def start(self, res, rot, col):
-        logging.debug("[FancyDisplay] Starting display controller.")
+        logging.debug("[Windows] Starting display controller.")
         self._res = res
         self._rot = rot
         self._col = col
@@ -327,7 +328,7 @@ class FancyDisplay:
             self.thread.join()
         self.loop = None
         self.thread = None
-        logging.debug("[FancyDisplay] Display controller stopped.")
+        logging.debug("[Windows] Display controller stopped.")
 
     async def screen_controller(self):
         self.running = True
@@ -338,15 +339,15 @@ class FancyDisplay:
     def is_running(self):
         if self.is_running_event is not None:
             return self.is_running_event.is_set()
-        logging.error("[FancyDisplay] is_running_event is not initialized.")
+        logging.error("[Windows] is_running_event is not initialized.")
         return False
 
     def cleanup(self):
-        logging.debug("[FancyDisplay] Cleaning up the FancyDisplay resources.")
+        logging.debug("[Windows] Cleaning up the Window resources.")
         self.task = None
         if self.loop is not None:
             if not self.loop.is_closed():
-                logging.debug("[FancyDisplay] Closing event loop.")
+                logging.debug("[Windows] Closing event loop.")
                 self.loop.close()
         self.loop = None
         self.thread = None
@@ -384,18 +385,18 @@ class FancyDisplay:
                     elif self._rot == 270:
                         canvas = canvas.rotate(270, expand=True)
 
-                    canvas.save(FANCYDISPLAY)
+                    canvas.save(WINDOWS)
                     if self.enabled:
                         canvas = canvas.resize((self._res[0], self._res[1])).convert(self._col)
                         self.displayImpl.render(canvas)
                 else:
-                    logging.warning("[FancyDisplay] No image to display.")
+                    logging.warning("[Windows] No image to display.")
                 
                 await asyncio.sleep(fps)
                 iteration += 1
 
         except asyncio.CancelledError:
-            logging.warning("[FancyDisplay] refacer cancelled.")
+            logging.warning("[Windows] refacer cancelled.")
     def display_hijack(self):
         try:
             args = argparse.Namespace(
@@ -434,7 +435,7 @@ class FancyDisplay:
                 logging.debug('[Windows] Display is already initialized.')
 
         except KeyError as e:
-            logging.error(f'[FancyDisplay] KeyError while display hijacking: {e}')
+            logging.error(f'[Windows] KeyError while display hijacking: {e}')
             logging.error(traceback.format_exc())
             
     def glitch_text_effect(self, text, glitch_chance=0.2, max_spaces=3):
@@ -452,7 +453,7 @@ class FancyDisplay:
 
     def set_mode(self, mode, sub_mode=None, config={}):
         if mode in self.modes:
-            logging.debug(f"[FancyDisplay] Switching to mode: {mode}")
+            logging.debug(f"[Windows] Switching to mode: {mode}")
             self.current_mode = mode
             if mode == "screen_saver":
                 self.set_screen_saver_mode(sub_mode)
@@ -462,7 +463,7 @@ class FancyDisplay:
             elif mode == "terminal":
                 self.screen_data = config 
         else:
-            logging.warning(f"[FancyDisplay] Invalid mode: {mode}. Available modes are: {self.modes}")
+            logging.warning(f"[Windows] Invalid mode: {mode}. Available modes are: {self.modes}")
     
     def switch_mode(self, direction='next'):
         current_index = self.modes.index(self.current_mode)
@@ -472,12 +473,12 @@ class FancyDisplay:
         elif direction == 'previous':
             next_index = (current_index - 1) % len(self.modes)
         else:
-            logging.warning(f"[FancyDisplay] Invalid direction: {direction}. Using 'next' as default.")
+            logging.warning(f"[Windows] Invalid direction: {direction}. Using 'next' as default.")
             next_index = (current_index + 1) % len(self.modes)
         
         next_mode = self.modes[next_index]
         
-        logging.debug(f"[FancyDisplay] Switching to the {direction} mode: {next_mode}")
+        logging.debug(f"[Windows] Switching to the {direction} mode: {next_mode}")
         if next_mode == "screen_saver": 
             sub_mode = self.current_screen_saver
         self.set_mode(next_mode, sub_mode)
@@ -538,7 +539,7 @@ class FancyDisplay:
         if sub_mode is None:
             sub_mode = self.current_screen_saver
         if sub_mode in self.screen_saver_modes:
-            logging.debug(f"[FancyDisplay] Switching screen_saver to: {sub_mode}")
+            logging.debug(f"[Windows] Switching screen_saver to: {sub_mode}")
             self.current_screen_saver = sub_mode
             if sub_mode == 'show_logo':
                 options = {}
@@ -577,12 +578,12 @@ class FancyDisplay:
                 }
             self.screen_data.update(options)
         else:
-            logging.warning(f"[FancyDisplay] Invalid screen_saver sub-mode: {sub_mode}. Available sub-modes are: {self.screen_saver_modes}")
+            logging.warning(f"[Windows] Invalid screen_saver sub-mode: {sub_mode}. Available sub-modes are: {self.screen_saver_modes}")
 
     
     def switch_screen_saver_submode(self, direction='next'):
         if self.current_mode != 'screen_saver':
-            logging.warning(f"[FancyDisplay] Not in screen_saver mode. Current mode is: {self.current_mode}")
+            logging.warning(f"[Windows] Not in screen_saver mode. Current mode is: {self.current_mode}")
             return self.current_mode
         
         current_index = self.screen_saver_modes.index(self.current_screen_saver)
@@ -592,16 +593,16 @@ class FancyDisplay:
         elif direction == 'previous':
             next_index = (current_index - 1) % len(self.screen_saver_modes)  
         else:
-            logging.error(f"[FancyDisplay] Invalid direction: {direction}. Must be 'next' or 'previous'.")
+            logging.error(f"[Windows] Invalid direction: {direction}. Must be 'next' or 'previous'.")
             return self.current_mode
         
         next_submode = self.screen_saver_modes[next_index]
-        logging.warning(f"[FancyDisplay] Switching to the {direction} screen_saver sub-mode: {next_submode}")
+        logging.warning(f"[Windows] Switching to the {direction} screen_saver sub-mode: {next_submode}")
         self.set_screen_saver_mode(next_submode)
         return next_submode
 
     def get_mode_image(self):
-        logging.debug(f"[FancyDisplay] Getting mode image: {self.current_mode}")
+        logging.debug(f"[Windows] Getting mode image: {self.current_mode}")
         if self.current_mode == 'screen_saver':
             return self.get_screen_saver_image()
         elif self.current_mode == 'auxiliary':
@@ -609,7 +610,7 @@ class FancyDisplay:
         elif self.current_mode == 'terminal':
             return self.terminal_mode()
         else:
-            logging.warning(f"[FancyDisplay] Unknown mode: {self.current_mode}. Falling back to default.")
+            logging.warning(f"[Windows] Unknown mode: {self.current_mode}. Falling back to default.")
             return self.show_logo()
 
     def get_screen_saver_image(self):
@@ -624,25 +625,64 @@ class FancyDisplay:
         elif self.current_screen_saver == 'show_animation':
             return self.show_animation_screen_saver()
         else:
-            logging.warning(f"[FancyDisplay] Unknown screen_saver sub-mode: {self.current_screen_saver}.")
+            logging.warning(f"[Windows] Unknown screen_saver sub-mode: {self.current_screen_saver}.")
             self.current_screen_saver = 'show_logo'
             return self.show_logo() 
 
 
+    def get_aux_plugins(self):
+        return sorted([name for name, plugin in plugins.loaded.items() if hasattr(plugin, 'on_aux')])
+
+    def switch_aux(self, direction='next'):
+        aux_list = self.get_aux_plugins()
+        if not aux_list:
+            return None
+        
+        if self.active_aux_plugin not in aux_list:
+            self.active_aux_plugin = aux_list[0]
+            return self.active_aux_plugin
+
+        idx = aux_list.index(self.active_aux_plugin)
+        if direction == 'next':
+            idx = (idx + 1) % len(aux_list)
+        else:
+            idx = (idx - 1) % len(aux_list)
+        
+        self.active_aux_plugin = aux_list[idx]
+        return self.active_aux_plugin
+
     def auxiliary_image(self):
-        image = self.show_logo()
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-        text = "Auxiliary mode"
-        text_color = (255, 0, 0) 
-        image_width, image_height = image.size
+        aux_list = self.get_aux_plugins()
+        if not aux_list:
+            image = self.show_logo()
+            draw = ImageDraw.Draw(image)
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+            text = "No Aux Source"
+            text_color = (255, 0, 0) 
+            image_width, image_height = image.size
+            try:
+                text_width, text_height = draw.textsize(text, font)
+            except:
+                _, _, text_width, text_height = draw.textbbox((0, 0),text, font)
+            position = ((image_width - text_width) // 2, 10)
+            draw.text(position, text, font=font, fill=text_color)
+            return image
+        
+        if self.active_aux_plugin not in aux_list:
+            self.active_aux_plugin = aux_list[0]
+
         try:
-            text_width, text_height = draw.textsize(text, font)
-        except:
-            _, _, text_width, text_height = draw.textbbox((0, 0),text, font)
-        position = ((image_width - text_width) // 2, 10)
-        draw.text(position, text, font=font, fill=text_color)
-        return image
+            plugin = plugins.loaded[self.active_aux_plugin]
+            content = plugin.on_aux()
+            if isinstance(content, str):
+                if os.path.exists(content):
+                    return Image.open(content)
+            elif isinstance(content, Image.Image):
+                return content
+        except Exception as e:
+            logging.error(f"[Windows] Error in on_aux for {self.active_aux_plugin}: {e}")
+        
+        return self.show_logo()
 
     def show_logo(self):
         try:
@@ -668,7 +708,7 @@ class FancyDisplay:
             self.hijack_frame = canvas
             return canvas
         except KeyError as e:
-            logging.debug(f'[FancyDisplay] KeyError while showing logo: {e}')
+            logging.debug(f'[Windows] KeyError while showing logo: {e}')
             logging.debug(traceback.format_exc())
 
     def moving_shapes_screen_saver(self):
@@ -713,7 +753,7 @@ class FancyDisplay:
                 draw.ellipse((x, y, x + shape_width, y + shape_height), fill=color)
             return canvas
         except KeyError as e:
-            logging.error(f'[FancyDisplay] KeyError while moving shapes: {e}')
+            logging.error(f'[Windows] KeyError while moving shapes: {e}')
             logging.error(traceback.format_exc())
 
     def random_colors_screen_saver(self):
@@ -774,7 +814,7 @@ class FancyDisplay:
     def show_animation_screen_saver(self):
         try:
             if self.screen_data is None:
-                logging.error("[FancyDisplay] screen_data is None. Unable to show animation screen saver.")
+                logging.error("[Windows] screen_data is None. Unable to show animation screen saver.")
                 return self.show_logo() 
                 
             frames_path = self.screen_data.get('frames_path', '')
@@ -791,7 +831,7 @@ class FancyDisplay:
             frames = sorted([f for f in os.listdir(frames_path) if f.lower().endswith(valid_extensions)])
             
             if not frames:
-                logging.error("[FancyDisplay] No valid frames found in the specified directory")
+                logging.error("[Windows] No valid frames found in the specified directory")
                 return None
 
             if not hasattr(self, 'animation_state'):
@@ -819,7 +859,7 @@ class FancyDisplay:
                     else:
                         self.animation_state['extracted_frames'].append(Image.open(frame_path))
                 
-                logging.debug(f"[FancyDisplay] Extracted {len(self.animation_state['extracted_frames'])} frames")
+                logging.debug(f"[Windows] Extracted {len(self.animation_state['extracted_frames'])} frames")
 
             total_frames = len(self.animation_state['extracted_frames'])
             current_frame_index = int((elapsed_time / frame_duration) % total_frames)
@@ -836,7 +876,7 @@ class FancyDisplay:
             return image
 
         except Exception as ex:
-            logging.error(f"[FancyDisplay] Error in show_animation_screen_saver: {ex}")
+            logging.error(f"[Windows] Error in show_animation_screen_saver: {ex}")
             logging.error(traceback.format_exc())
             return None
 
@@ -865,8 +905,8 @@ class Windows(plugins.Plugin):
         self._th_path = ''
         self._res = [128, 64]
         self._color_mode = ['P', 'P']
-        if not os.path.exists(os.path.dirname(FANCYDISPLAY)):
-            os.makedirs(os.path.dirname(FANCYDISPLAY))
+        if not os.path.exists(os.path.dirname(WINDOWS)):
+            os.makedirs(os.path.dirname(WINDOWS))
 
         if self.fps_check(): rst = 1
         self.check_and_fix_fb()
@@ -984,7 +1024,7 @@ class Windows(plugins.Plugin):
                     self.display_controller = None
                 
                 image = Image.new('RGBA', (ui._width, ui._height), 'black')
-                image.save(FANCYDISPLAY)
+                image.save(WINDOWS)
 
                 if self._config['ui']['display']['enabled']:
                     if hasattr(ui, '_enabled') and not ui._enabled:
@@ -995,7 +1035,7 @@ class Windows(plugins.Plugin):
                 ui._enabled = False
                 if hasattr(self, 'display_controller') and not self.display_controller:
                     logging.info("[Windows] Starting display hijack.")
-                    self.display_controller = FancyDisplay(self._config['ui']['display']['enabled'], self.fps, self._th_path)
+                    self.display_controller = Window(self._config['ui']['display']['enabled'], self.fps, self._th_path)
                     self.display_controller.start(self._res, self.options.get('rotation', 0), self._color_mode[1])
                     mode = self.display_config.get('mode', 'screen_saver')
                     submode = self.display_config.get('sub_mode', 'show_logo')
@@ -1010,7 +1050,7 @@ class Windows(plugins.Plugin):
 
     def process_actions(self, command):
         if command is None:
-            logging.error("[Fancygotchi] Action is None, unable to process.")
+            logging.error("[Windows] Action is None, unable to process.")
             return
         try:
             action = command.get('action')
@@ -1028,7 +1068,6 @@ class Windows(plugins.Plugin):
                     self.display_config['mode'] = self.screen_modes[(self.screen_modes.index(self.display_config['mode']) - 1) % len(self.screen_modes)]
             elif action == 'enable_second_screen':
                 self.dispHijack = True
-                self.fancy_menu.active = False
             elif action == 'disable_second_screen':
                 logging.info('disable second screen')
                 self.dispHijack = False
@@ -1044,14 +1083,26 @@ class Windows(plugins.Plugin):
                     self.display_config['sub_mode'] =  self.display_controller.switch_screen_saver_submode('previous')
                 except:
                     self.display_config['sub_mode'] = self.screen_saver_modes[(self.screen_saver_modes.index(self.display_config['sub_mode']) + 1) % len(self.screen_saver_modes)]
+            elif action == 'next_aux':
+                logging.info('next aux')
+                try:
+                    self.display_controller.switch_aux('next')
+                except Exception as e:
+                    logging.error(f"Error switching aux: {e}")
+            elif action == 'previous_aux':
+                logging.info('previous aux')
+                try:
+                    self.display_controller.switch_aux('previous')
+                except Exception as e:
+                    logging.error(f"Error switching aux: {e}")
 
         except Exception as e:
             logging.error(f'error while processing menu command: {e}')
 
     def ui2(self):
         try:
-            if os.path.exists(FANCYDISPLAY):
-                return send_file(FANCYDISPLAY, mimetype='image/png')
+            if os.path.exists(WINDOWS):
+                return send_file(WINDOWS, mimetype='image/png')
             image = self.second_screen
             if hasattr(self, 'display_controller') and self.display_controller:
                 image = self.display_controller.screen() or image
@@ -1066,6 +1117,49 @@ class Windows(plugins.Plugin):
             image.save(img_io, 'PNG')
             img_io.seek(0) 
             return send_file(img_io, mimetype='image/png'), 200
+
+    def on_pwnctl(self, cmd):
+        if cmd == 'help':
+            return "Windows commands: second_screen, display_pwny, display_next, display_previous, screen_saver_next, screen_saver_previous, aux_next, aux_prev"
+        
+        if cmd == 'second_screen':
+             self.dispHijack = not self.dispHijack
+             return "Second screen toggled"
+        elif cmd == 'display_pwny':
+             self.dispHijack = False
+             return "Pwny screen enabled"
+        elif cmd == 'display_hijack':
+             self.dispHijack = True
+             return "Second screen enabled"
+        
+        action_map = {
+            'display_next': 'switch_screen_mode',
+            'display_previous': 'switch_screen_mode_reverse',
+            'screen_saver_next': 'next_screen_saver',
+            'screen_saver_previous': 'previous_screen_saver',
+            'aux_next': 'next_aux',
+            'aux_prev': 'previous_aux'
+        }
+        
+        if cmd in action_map:
+            self.process_actions({'action': action_map[cmd]})
+            return "OK"
+            
+        return "Unknown command"
+
+    def on_menu(self):
+        return {
+            'Windows': [
+                ("Second Screen", {"action": "pwnctl", "plugin": "windows", "cmd": "second_screen"}),
+                ("Pwny Screen", {"action": "pwnctl", "plugin": "windows", "cmd": "display_pwny"}),
+                ("Next Mode", {"action": "pwnctl", "plugin": "windows", "cmd": "display_next"}),
+                ("Prev Mode", {"action": "pwnctl", "plugin": "windows", "cmd": "display_previous"}),
+                ("Next Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_next"}),
+                ("Prev Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_previous"}),
+                ("Next Aux", {"action": "pwnctl", "plugin": "windows", "cmd": "aux_next"}),
+                ("Prev Aux", {"action": "pwnctl", "plugin": "windows", "cmd": "aux_prev"}),
+            ]
+        }
         
     def on_webhook(self, path, request):
         try:
@@ -1134,6 +1228,22 @@ class Windows(plugins.Plugin):
                             logging.error(ex)
                             logging.error(traceback.format_exc())
                             return "previous screen saver error", 500
+                elif path == "aux_next":
+                    try:
+                        self.process_actions({"action": "next_aux"})
+                        return json.dumps({"message": "Aux change successful!", "status": 200})
+                    except Exception as ex:
+                        logging.error(ex)
+                        logging.error(traceback.format_exc())
+                        return "Aux next error", 500
+                elif path == "aux_prev":
+                    try:
+                        self.process_actions({"action": "previous_aux"})
+                        return json.dumps({"message": "Aux change successful!", "status": 200})
+                    except Exception as ex:
+                        logging.error(ex)
+                        logging.error(traceback.format_exc())
+                        return "Aux previous error", 500
                     
             #elif request.method == "POST":
 

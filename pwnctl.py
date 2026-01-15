@@ -65,7 +65,10 @@ class PwnCTL(plugins.Plugin):
                             plugin_name = parts[0]
                             action = parts[1] if len(parts) > 1 else "index"
                             
-                            response = self.dispatch_to_webhook(plugin_name, action)
+                            if plugin_name == 'list':
+                                response = self.get_plugins_list()
+                            else:
+                                response = self.dispatch_to_webhook(plugin_name, action)
                             conn.sendall(self.clean_output(response).encode('utf-8'))
                     except Exception as e:
                         conn.sendall(f"Internal Error: {e}".encode('utf-8'))
@@ -75,12 +78,47 @@ class PwnCTL(plugins.Plugin):
             if os.path.exists(SOCKET_PATH):
                 os.remove(SOCKET_PATH)
 
+    def get_plugins_list(self):
+        pwnctl_list = []
+        webhook_list = []
+        
+        for name, plugin in plugins.loaded.items():
+            if hasattr(plugin, 'on_pwnctl'):
+                try:
+                    help_msg = plugin.on_pwnctl('help')
+                    pwnctl_list.append(f"{name} : {help_msg}")
+                except:
+                    pwnctl_list.append(f"{name} : (Error retrieving help)")
+            elif hasattr(plugin, 'on_webhook'):
+                webhook_list.append(name)
+        
+        response = "Natively compatible plugins (on_pwnctl):\n"
+        if pwnctl_list:
+            response += "\n".join(pwnctl_list)
+        else:
+            response += "None"
+            
+        response += "\n\nPlugins with webhook support (blind bridge):\n"
+        if webhook_list:
+            response += "\n".join(webhook_list)
+        else:
+            response += "None"
+            
+        return response
+
     def dispatch_to_webhook(self, plugin_name, action):
         """The magic part: calling on_webhook with a mock request object."""
         if plugin_name not in plugins.loaded:
             return f"Error: Plugin '{plugin_name}' not loaded."
 
         target = plugins.loaded[plugin_name]
+        
+        if hasattr(target, 'on_pwnctl'):
+            try:
+                return str(target.on_pwnctl(action))
+            except Exception as e:
+                return f"Error: {e}"
+
         if hasattr(target, 'on_webhook'):
             try:
                 # Mock Request object to satisfy 'request.method' checks
