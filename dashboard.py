@@ -5,6 +5,7 @@ import threading
 import time
 import gc
 from flask import render_template_string, Flask
+from PIL import Image
 
 class DashBoard(plugins.Plugin):
     __author__ = 'V0rT3x'
@@ -15,6 +16,12 @@ class DashBoard(plugins.Plugin):
         self._agent = None
         self._original_index = None
         self._app = None
+
+    #def on_aux(self):
+    #    if int(time.time()) % 2 == 0:
+    #        return Image.new('RGB', (128, 64), "green")
+    #    else:
+    #        return Image.new('RGB', (128, 64), "lime")
 
     def on_ready(self, agent):
         self._agent = agent
@@ -85,13 +92,41 @@ class DashBoard(plugins.Plugin):
 {% endblock %}
 
 {% block script %}
+function cacheImage(img, key) {
+    try {
+        var canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        var dataURL = canvas.toDataURL("image/png");
+        localStorage.setItem(key, dataURL);
+    } catch(e) {
+        console.log("Error caching image: " + e);
+    }
+}
+
+function loadCachedImage(key, imgElement) {
+    var dataURL = localStorage.getItem(key);
+    if (dataURL) {
+        imgElement.src = dataURL;
+    }
+}
+
 window.onload = function() {
     var image = document.getElementById("ui");
+    
+    loadCachedImage("ui_cache", image);
+
     function updateImage() {
-        image.src = image.src.split("?")[0] + "?" + new Date().getTime();
+        var tmp_image = new Image();
+        tmp_image.src = "/ui?" + new Date().getTime();
+        tmp_image.onload = function() {
+            image.src = this.src;
+            cacheImage(this, "ui_cache");
+        }
     }
     setInterval(updateImage, 1000);
-
 }
 {% endblock %}
 
