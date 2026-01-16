@@ -17,6 +17,8 @@ class GPIOControl(plugins.Plugin):
         self.encoder = None
         self.encoder_button = None
         self.previous_step = 0
+        self.default_mapping = {}
+        self.context_stack = []
 
     def runcommand(self, command):
         logging.info(f"Running command: {command}")
@@ -25,7 +27,8 @@ class GPIOControl(plugins.Plugin):
         process.wait()
 
     def on_loaded(self):
-        logging.info("GPIO Button and Encoder plugin loaded.")
+        logging.info("GPIO Control loaded with context support.")
+        self.default_mapping = self.options.get('gpios', {})
 
         # Initialize GPIO buttons
         gpios = self.options.get('gpios', {})
@@ -67,6 +70,22 @@ class GPIOControl(plugins.Plugin):
             self.encoder_button.when_released = lambda: self.on_button_released(encoder_button_pin, encoder_pins.get('button_short_press'), encoder_pins.get('button_long_press'))
             logging.info(f"Encoder button configured on GPIO {encoder_button_pin}.")
 
+    def get_current_mapping(self):
+        """Returns the mapping from the top of the stack, or default if empty."""
+        if self.context_stack:
+            return self.context_stack[-1][1]
+        return self.default_mapping
+
+    def request_control(self, plugin_name, mapping):
+        """Allows a plugin to push its own mapping onto the stack."""
+        logging.info(f"[gpiocontrol] Plugin '{plugin_name}' is taking control.")
+        self.context_stack.append((plugin_name, mapping))
+
+    def release_control(self, plugin_name):
+        """Allows a plugin to remove itself from the stack, returning control to previous."""
+        self.context_stack = [ctx for ctx in self.context_stack if ctx[0] != plugin_name]
+        logging.info(f"[gpiocontrol] Plugin '{plugin_name}' released control.")
+
     def on_button_pressed(self, gpio):
         """Record the time the button was pressed."""
         self.button_hold_times[gpio] = time.time()
@@ -76,14 +95,25 @@ class GPIOControl(plugins.Plugin):
         """Handle button release and determine if it's a short or long press."""
         hold_time = time.time() - self.button_hold_times[gpio]
         logging.info(f"Button {gpio} released after {hold_time:.2f} seconds.")
+        
+        current_map = self.get_current_mapping()
+        gpio_key = str(gpio)
+        
+        cmd_short = short_press_command
+        cmd_long = long_press_command
+        
+        if gpio_key in current_map:
+             cmd_short = current_map[gpio_key].get('short_press', short_press_command)
+             cmd_long = current_map[gpio_key].get('long_press', long_press_command)
+
         if hold_time >= 1.0:
-            logging.info(f"Long press detected on GPIO {gpio}. Running command: {long_press_command}")
-            if long_press_command:
-                self.runcommand(long_press_command)
+            logging.info(f"Long press detected on GPIO {gpio}. Running command: {cmd_long}")
+            if cmd_long:
+                self.runcommand(cmd_long)
         else:
-            logging.info(f"Short press detected on GPIO {gpio}. Running command: {short_press_command}")
-            if short_press_command:
-                self.runcommand(short_press_command)
+            logging.info(f"Short press detected on GPIO {gpio}. Running command: {cmd_short}")
+            if cmd_short:
+                self.runcommand(cmd_short)
 
     def on_encoder_rotated(self, up_command, down_command):
         """Handle encoder rotation."""
