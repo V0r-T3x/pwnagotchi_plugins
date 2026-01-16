@@ -1871,6 +1871,17 @@ class OpwnHouse(plugins.Plugin):
 
             logging.info(f"[opwnhouse] Processing {'MASTER' if is_master else 'source'} file: {os.path.basename(file_path)}")
             with open(file_path, 'r', errors='ignore') as f:
+                # Check for HTML content (e.g. Cloudflare error page) to avoid corruption
+                try:
+                    header = f.read(512)
+                    if '<!DOCTYPE html>' in header or '<html' in header.lower():
+                        logging.warning(f"[opwnhouse] File {file_path} appears to be HTML. Skipping.")
+                        continue
+                    f.seek(0)
+                except Exception as e:
+                    logging.error(f"[opwnhouse] Error checking file {file_path}: {e}")
+                    continue
+
                 for line in f:
                     line = line.strip()
                     if not line:
