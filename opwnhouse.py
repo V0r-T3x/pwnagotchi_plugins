@@ -395,6 +395,14 @@ _____________
                 <label for="save_path">Consolidated Potfile Path:</label>
                 <input type="text" id="save_path" name="save_path" placeholder="e.g., /root/handshakes/opwnhouse.potfile"><br><br>
             </div>
+            <div class="config-item">
+                <label for="min_rssi">Minimum RSSI (Landscape/Radar):</label>
+                <input type="number" id="min_rssi" name="min_rssi" placeholder="-90"><br><br>
+            </div>
+            <div class="config-item">
+                <label for="max_rssi">Maximum RSSI (Landscape/Radar):</label>
+                <input type="number" id="max_rssi" name="max_rssi" placeholder="-10"><br><br>
+            </div>
 
             <button type="button" onclick="saveConfiguration()">Save Configuration</button>
         </form>
@@ -926,6 +934,8 @@ function loadConfiguration() {
             document.getElementById('stats_position').value = Array.isArray(config.stats_position) ? config.stats_position.join(', ') : (config.stats_position || '');
             document.getElementById('custom_dir').value = config.custom_dir || '';
             document.getElementById('save_path').value = config.save_path || '';
+            document.getElementById('min_rssi').value = config.min_rssi || -90;
+            document.getElementById('max_rssi').value = config.max_rssi || -10;
         })
         .catch(error => console.error('Error loading config:', error));
 }
@@ -942,6 +952,8 @@ function saveConfiguration() {
         stats_position: document.getElementById('stats_position').value,
         custom_dir: document.getElementById('custom_dir').value,
         save_path: document.getElementById('save_path').value,
+        min_rssi: parseInt(document.getElementById('min_rssi').value, 10),
+        max_rssi: parseInt(document.getElementById('max_rssi').value, 10),
     };
 
     statusDiv.textContent = 'Saving...';
@@ -1095,9 +1107,9 @@ function updateProximityTable() {
         .then(response => response.json())
         .then(data => {
             const table = document.getElementById('proximity_table');
-            let tableContent = '<thead><tr><th>ESSID</th><th>BSSID</th><th>STAMAC</th><th>Password</th><th>GPS</th><th>RSSI</th><th>Trend</th><th>Actions</th></tr></thead><tbody>';
+            let tableContent = '<thead><tr><th>ESSID</th><th>BSSID</th><th>Channel</th><th>STAMAC</th><th>Password</th><th>GPS</th><th>RSSI</th><th>Trend</th><th>Actions</th></tr></thead><tbody>';
             if (!data.nearby_aps || data.nearby_aps.length === 0) {
-                tableContent += '<tr><td colspan="8">No networks detected in proximity.</td></tr>';
+                tableContent += '<tr><td colspan="9">No networks detected in proximity.</td></tr>';
             } else {
                 data.nearby_aps.forEach(net => {
                     const essid = net.essid || '';
@@ -1105,6 +1117,7 @@ function updateProximityTable() {
                     const password = net.password || '';
                     const stamac = net.stamac || '';
                     const passwordDisplay = password ? password : '<em>N/A</em>';
+                    const channel = net.channel || '-';
                     const stamacDisplay = stamac ? stamac : '<em>N/A</em>';
                     const gpsDisplay = net.gps || '<em>N/A</em>';
                     
@@ -1124,7 +1137,7 @@ function updateProximityTable() {
                         tableContent += '<tr>';
                     }
                     const editButton = `<button onclick="event.stopPropagation(); showEditModal('${js_essid}', '${js_bssid}', '${js_stamac}', '${js_password}')">Edit</button>`;
-                    tableContent += `<td>${essid}</td><td>${bssid}</td><td>${stamacDisplay}</td><td>${passwordDisplay}</td><td>${gpsDisplay}</td><td>${net.rssi}</td><td>${trendDisplay}</td><td>${editButton}</td></tr>`;
+                    tableContent += `<td>${essid}</td><td>${bssid}</td><td>${channel}</td><td>${stamacDisplay}</td><td>${passwordDisplay}</td><td>${gpsDisplay}</td><td>${net.rssi}</td><td>${trendDisplay}</td><td>${editButton}</td></tr>`;
                 });
             }
             tableContent += '</tbody>';
@@ -1149,8 +1162,11 @@ function updateProximityTable() {
                 }
             }
 
+            const minRssi = data.min_rssi !== undefined ? data.min_rssi : -90;
+            const maxRssi = data.max_rssi !== undefined ? data.max_rssi : -10;
+
             if (currentViewMode === 'radar') {
-                generateRadar(filtered_aps, data.pwnagotchi_face, data.movement_bearing);
+                generateRadar(filtered_aps, data.pwnagotchi_face, data.movement_bearing, minRssi, maxRssi);
                 return;
             }
 
@@ -1166,7 +1182,7 @@ function updateProximityTable() {
             const sceneWidthPx = scene.clientWidth;
 
             filtered_aps.forEach(net => {
-                if (net.rssi >= -90 && (net.essid && net.essid.trim() !== '<hidden>' || net.password)) {
+                if (net.rssi >= minRssi && net.rssi <= maxRssi && (net.essid && net.essid.trim() !== '<hidden>' || net.password)) {
                     const tempHouseWrapper = document.createElement('div');
                     tempHouseWrapper.className = 'house-wrapper';
                     tempHouseWrapper.style.visibility = 'hidden';
@@ -1197,7 +1213,6 @@ function updateProximityTable() {
                         houseWrapper.dataset.password = net.password;
                         houseWrapper.onclick = () => showQrCode(net.essid, net.password);
                     }
-                    const minRssi = -90, maxRssi = -29;
                     const minPosPercent = 15, maxPosPercent = 95;
                     const normalizedRssi = Math.max(0, Math.min(1, (net.rssi - minRssi) / (maxRssi - minRssi)));
                     let idealPositionPx = (maxPosPercent - (normalizedRssi * (maxPosPercent - minPosPercent))) / 100 * sceneWidthPx;
@@ -1219,7 +1234,7 @@ function updateProximityTable() {
         .catch(error => console.error('Error fetching proximity data:', error));
 }
 
-function generateRadar(aps, pwnFace, bearing) {
+function generateRadar(aps, pwnFace, bearing, minRssi, maxRssi) {
     const container = document.getElementById('radar-scene-container');
     container.innerHTML = '';
     
@@ -1311,8 +1326,8 @@ function generateRadar(aps, pwnFace, bearing) {
     }
 
     aps.forEach(net => {
-        const minRssi = -95;
-        const maxRssi = -30;
+        if (net.rssi < minRssi || net.rssi > maxRssi) return;
+
         let normalized = (net.rssi - minRssi) / (maxRssi - minRssi);
         normalized = Math.max(0, Math.min(1, normalized));
         const distance = minRadius + (1 - normalized) * (maxRadius - minRadius);
@@ -1750,7 +1765,8 @@ class OpwnHouse(plugins.Plugin):
 
                         all_nearby_aps.append({
                             'essid': essid, 'bssid': ap['mac'], 'stamac': stamac,
-                            'rssi': rssi, 'password': password, 'trend': trend
+                        'rssi': rssi, 'password': password, 'trend': trend,
+                        'channel': ap.get('channel', '-')
                         })
 
                     with self.lock:
@@ -2168,7 +2184,7 @@ class OpwnHouse(plugins.Plugin):
                             logging.warning(f"[opwnhouse] Invalid position format for {k}: '{v}'. Skipping.")
                     elif k == 'display_stats':
                         new_config[k] = (v.lower() in ['true', 'on'])
-                    elif k == 'per_page':
+                    elif k in ('per_page', 'min_rssi', 'max_rssi'):
                         new_config[k] = int(v)
                     else:
                         new_config[k] = v
@@ -2275,7 +2291,9 @@ class OpwnHouse(plugins.Plugin):
                     'nearby_aps': formatted_aps,
                     'total_nearby_cracked': total_nearby_cracked_copy,
                     'total_cracked': total_cracked_copy,
-                    'movement_bearing': movement_bearing_copy
+                    'movement_bearing': movement_bearing_copy,
+                    'min_rssi': self.options.get('min_rssi', -90),
+                    'max_rssi': self.options.get('max_rssi', -10)
                 }
                 return jsonify(response_data)
             elif path == "config":
