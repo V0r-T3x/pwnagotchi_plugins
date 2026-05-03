@@ -1,6 +1,8 @@
 import logging
 import os
 import json
+import math
+import copy
 import time
 import pwnagotchi
 import pwnagotchi.plugins as plugins
@@ -144,7 +146,9 @@ class LightMenu(plugins.Plugin):
         self.show_down_arrow = False
         self.up_arrow_visible = False
         self.down_arrow_visible = False
+        self._last_snapshot = {}
         self.last_activity_time = 0
+        self._last_pwnctl_registry_refresh = 0
         
         # Layout variables
         self.menu_positions = []
@@ -190,12 +194,14 @@ class LightMenu(plugins.Plugin):
                 self.options['custom_menus'] = "{}"
 
         self.build_menus()
+        self._refresh_pwnctl_registry_once("loaded")
 
     def build_menus(self):
         self.menus = {
             'Main menu': [
                 ("Plugins", {"action": "submenu", "name": "Plugins"}),
                 ("System", {"action": "submenu", "name": "System"}),
+                ("Stealth Mode", {"action": "pwnctl", "plugin": "refacer", "cmd": "stealth_toggle"}),
             ],
             'System': [
                 ("Restart Auto", {"action": "restart", "mode": "AUTO"}),
@@ -209,6 +215,7 @@ class LightMenu(plugins.Plugin):
         self.populate_plugins_menu()
         self.populate_custom_menus()
         self.populate_on_menu()
+        self._sanitize_menu_tree()
 
     def populate_custom_menus(self):
         custom_menus = self.get_custom_menus()
@@ -246,16 +253,132 @@ class LightMenu(plugins.Plugin):
 
     def populate_on_menu(self):
         for name, plugin in plugins.loaded.items():
+            if plugin is self:
+                continue
             if hasattr(plugin, 'on_menu'):
                 try:
                     menus = plugin.on_menu()
                     if isinstance(menus, dict):
                         for menu_name, items in menus.items():
+                            if not isinstance(menu_name, str) or not isinstance(items, list):
+                                continue
                             if menu_name not in self.menus:
                                 self.menus['Main menu'].append((menu_name, {"action": "submenu", "name": menu_name}))
-                                self.menus[menu_name] = items
+                            self.menus[menu_name] = items
                 except Exception as e:
                     logging.error(f"[lightmenu] Error in on_menu for {name}: {e}")
+
+    def _sanitize_menu_tree(self):
+        sanitized = {}
+        for menu_name, items in self.menus.items():
+            if not isinstance(menu_name, str):
+                continue
+            clean_items = []
+            seen_labels = set()
+            for item in items or []:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    continue
+                label, action = item
+                if not isinstance(label, str) or not isinstance(action, dict):
+                    continue
+                key = (menu_name, label)
+                if key in seen_labels:
+                    continue
+                seen_labels.add(key)
+                clean_items.append((label, action))
+            sanitized[menu_name] = clean_items
+        self.menus = sanitized
+
+    def _ensure_dynamic_menu_state(self):
+        previous_menu = self.current_menu
+        previous_stack = list(self.menu_stack)
+        previous_index = self.current_index
+        previous_offset = self.menu_item_offset
+
+        self.build_menus()
+
+        if previous_menu in self.menus:
+            self.current_menu = previous_menu
+        else:
+            self.current_menu = 'Main menu'
+
+        self.menu_stack = [menu for menu in previous_stack if menu in self.menus]
+        current_len = self.get_current_menu_length()
+        if current_len <= 0:
+            self.current_index = 0
+            self.menu_item_offset = 0
+        else:
+            self.current_index = max(0, min(previous_index, current_len - 1))
+            self.menu_item_offset = max(0, min(previous_offset, max(0, current_len - 1)))
+
+    def _refresh_pwnctl_registry_once(self, reason="loaded"):
+        now = time.time()
+        last = getattr(self, "_last_pwnctl_registry_refresh", 0)
+        if now - last < 5:
+            return
+        self._last_pwnctl_registry_refresh = now
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "refresh_registry"):
+                pwnctl.refresh_registry()
+        except Exception as e:
+            logging.debug(f"[lightmenu] pwnctl registry refresh failed ({reason}): {e}")
+
+    def on_v0rt3x_actions(self):
+        return {
+            "lightmenu.open": {"label": "Open LightMenu", "plugin": "lightmenu", "cmd": "open", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.close": {"label": "Close LightMenu", "plugin": "lightmenu", "cmd": "close", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.toggle": {"label": "Toggle LightMenu", "plugin": "lightmenu", "cmd": "toggle", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.up": {"label": "LightMenu up", "plugin": "lightmenu", "cmd": "up", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.down": {"label": "LightMenu down", "plugin": "lightmenu", "cmd": "down", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.select": {"label": "LightMenu select", "plugin": "lightmenu", "cmd": "select", "category": "lightmenu", "risk": "safe"},
+            "lightmenu.back": {"label": "LightMenu back", "plugin": "lightmenu", "cmd": "back", "category": "lightmenu", "risk": "safe"},
+        }
+
+    def on_v0rt3x_contexts(self):
+        return {
+            "lightmenu_open": {
+                "label": "LightMenu open",
+                "priority": 90,
+                "owner": "lightmenu",
+            }
+        }
+
+    def _pwnctl(self):
+        return plugins.loaded.get("pwnctl")
+
+    def _emit_pwnctl_event(self, event, context=None, payload=None):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "emit_event"):
+                pwnctl.emit_event("lightmenu", event, context=context, payload=payload or {})
+        except Exception as e:
+            logging.debug(f"[lightmenu] pwnctl event emit failed: {e}")
+
+    def _claim_pwnctl_context(self):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "claim_context"):
+                try:
+                    payload = self.get_menu_snapshot()
+                except Exception:
+                    payload = {}
+                pwnctl.claim_context(
+                    owner="lightmenu",
+                    context_id="lightmenu_open",
+                    priority=90,
+                    payload=payload,
+                )
+        except Exception as e:
+            logging.debug(f"[lightmenu] pwnctl context claim failed: {e}")
+
+    def _release_pwnctl_context(self):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "release_context"):
+                pwnctl.release_context("lightmenu", "lightmenu_open")
+        except Exception as e:
+            logging.debug(f"[lightmenu] pwnctl context release failed: {e}")
 
     def on_ui_setup(self, ui):
         self.ui = ui
@@ -292,6 +415,79 @@ class LightMenu(plugins.Plugin):
         self.cursor_x = menu_x + 2
         self.pos_cursor = (self.cursor_x, start_y)
 
+    def _refacer_renderer_active(self):
+        refacer = plugins.loaded.get('refacer')
+        if not refacer:
+            return False
+        try:
+            cfg_enabled = bool(
+                pwnagotchi.config.get('main', {})
+                .get('plugins', {})
+                .get('refacer', {})
+                .get('enabled', False)
+            )
+            plugin_enabled = bool(getattr(refacer, 'enabled', cfg_enabled))
+            running = bool(getattr(refacer, '_running', False))
+
+            # Refacer can remain loaded/stale after recovery or disable.
+            # Only let it own LightMenu rendering when config/plugin state
+            # and renderer runtime agree.
+            return bool(cfg_enabled and plugin_enabled and running)
+        except Exception:
+            return False
+
+    def _lightmenu_should_draw_locally(self):
+        return not self._refacer_renderer_active()
+
+    def _remove_local_menu_elements(self):
+        try:
+            view.ROOT.remove_element('menubg')
+        except Exception:
+            pass
+        try:
+            view.ROOT.remove_element('menuborder')
+        except Exception:
+            pass
+        for i in range(self.label_count):
+            try:
+                view.ROOT.remove_element(f'menuitem{i}')
+            except Exception:
+                pass
+        for key in ('menucursor', 'menuup', 'menudown'):
+            try:
+                view.ROOT.remove_element(key)
+            except Exception:
+                pass
+        self.up_arrow_visible = False
+        self.down_arrow_visible = False
+
+    def _request_redraw(self):
+        try:
+            if view.ROOT:
+                view.ROOT.update(force=True)
+        except Exception:
+            pass
+
+    def _menu_title(self):
+        return self.current_menu or 'Main menu'
+
+    def _selected_label(self):
+        items = self.get_current_menu_items()
+        if not items:
+            return ''
+        if self.current_index < 0 or self.current_index >= len(items):
+            return ''
+        return items[self.current_index]
+
+    def _stealth_enabled(self):
+        refacer = plugins.loaded.get('refacer')
+        if not refacer or not hasattr(refacer, '_theme_stealth_mode'):
+            return False
+        try:
+            return bool(refacer._theme_stealth_mode(refacer._theme_bundle))
+        except Exception:
+            return False
+
     def on_ui_update(self, ui):
         if self.menu_visible:
             try:
@@ -303,6 +499,25 @@ class LightMenu(plugins.Plugin):
                 self.close_menu()
                 return
 
+            # Keep top-level plugin categories visible on main menu, like the old Fancy menu model:
+            # Plugins / Refacer / Windows / System ...
+            if self.current_menu == 'Main menu':
+                main_labels = set(item[0] for item in self.menus.get('Main menu', []))
+                for name, plugin in plugins.loaded.items():
+                    if plugin is self or not hasattr(plugin, 'on_menu'):
+                        continue
+                    try:
+                        menus = plugin.on_menu()
+                    except Exception:
+                        continue
+                    if isinstance(menus, dict):
+                        for menu_name in menus.keys():
+                            if isinstance(menu_name, str) and menu_name not in main_labels:
+                                self.menus['Main menu'].append((menu_name, {"action": "submenu", "name": menu_name}))
+                                main_labels.add(menu_name)
+            self._ensure_dynamic_menu_state()
+            self._last_snapshot = self.get_menu_snapshot()
+
             if self.update_labels:
                 self.update_labels = False
                 menu_items = self.get_current_menu_items()
@@ -311,9 +526,11 @@ class LightMenu(plugins.Plugin):
                 for i in range(self.label_count):
                     key = f'menuitem{i}'
                     if offset + i < len(menu_items):
-                        ui.set(key, menu_items[offset + i])
+                        if self._lightmenu_should_draw_locally():
+                            ui.set(key, menu_items[offset + i])
                     else:
-                        ui.set(key, ' ')
+                        if self._lightmenu_should_draw_locally():
+                            ui.set(key, ' ')
 
             if self.move_cursor:
                 self.move_cursor = False
@@ -321,32 +538,37 @@ class LightMenu(plugins.Plugin):
                 if 0 <= index < self.label_count:
                     target_y = self.menu_positions[index][1]
                     self.pos_cursor = (self.cursor_x, target_y)
-                    try:
-                        ui.remove_element('menucursor')
-                    except Exception:
-                        pass
-                    ui.add_element('menucursor', Text(color=BLACK, value='>', position=self.pos_cursor, font=fonts.Medium))
+                    if self._lightmenu_should_draw_locally():
+                        try:
+                            ui.remove_element('menucursor')
+                        except Exception:
+                            pass
+                        ui.add_element('menucursor', Text(color=BLACK, value='>', position=self.pos_cursor, font=fonts.Medium))
 
             # Handle arrows
             if self.show_up_arrow and not self.up_arrow_visible:
                 self.up_arrow_visible = True
-                ui.add_element('menuup', Text(color=BLACK, value='^', position=self.pos_up, font=fonts.Medium))
+                if self._lightmenu_should_draw_locally():
+                    ui.add_element('menuup', Text(color=BLACK, value='^', position=self.pos_up, font=fonts.Medium))
             elif not self.show_up_arrow and self.up_arrow_visible:
                 self.up_arrow_visible = False
-                try:
-                    ui.remove_element('menuup')
-                except Exception:
-                    pass
+                if self._lightmenu_should_draw_locally():
+                    try:
+                        ui.remove_element('menuup')
+                    except Exception:
+                        pass
 
             if self.show_down_arrow and not self.down_arrow_visible:
                 self.down_arrow_visible = True
-                ui.add_element('menudown', Text(color=BLACK, value='v', position=self.pos_down, font=fonts.Medium))
+                if self._lightmenu_should_draw_locally():
+                    ui.add_element('menudown', Text(color=BLACK, value='v', position=self.pos_down, font=fonts.Medium))
             elif not self.show_down_arrow and self.down_arrow_visible:
                 self.down_arrow_visible = False
-                try:
-                    ui.remove_element('menudown')
-                except Exception:
-                    pass
+                if self._lightmenu_should_draw_locally():
+                    try:
+                        ui.remove_element('menudown')
+                    except Exception:
+                        pass
 
     def on_dashboard(self):
         if not self.options.get('dashboard_enabled', True):
@@ -355,11 +577,11 @@ class LightMenu(plugins.Plugin):
         <div style="text-align: center;">
             <h3>LightMenu</h3>
             <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 5px;">
-                <button class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/up')">Up</button>
-                <button class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/down')">Down</button>
-                <button class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/select')">Select</button>
-                <button class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/back')">Back</button>
-                <button class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/toggle')">Toggle</button>
+                <button type="button" class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/up', {method:'GET', cache:'no-store'}); return false;">Up</button>
+                <button type="button" class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/down', {method:'GET', cache:'no-store'}); return false;">Down</button>
+                <button type="button" class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/select', {method:'GET', cache:'no-store'}); return false;">Select</button>
+                <button type="button" class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/back', {method:'GET', cache:'no-store'}); return false;">Back</button>
+                <button type="button" class="ui-btn ui-btn-inline ui-corner-all" onclick="fetch('/plugins/lightmenu/toggle', {method:'GET', cache:'no-store'}); return false;">Toggle</button>
             </div>
         </div>
         """
@@ -514,7 +736,46 @@ class LightMenu(plugins.Plugin):
     def get_current_menu_length(self):
         return len(self._get_current_menu_full_list())
 
+    def get_menu_snapshot(self):
+        menu_items = self.get_current_menu_items()
+        selected_label = self._selected_label()
+        if selected_label == 'Stealth Mode':
+            selected_label = f"Stealth Mode [{'On' if self._stealth_enabled() else 'Off'}]"
+        visible_items = []
+        for item in menu_items:
+            if item == 'Stealth Mode':
+                visible_items.append(f"Stealth Mode [{'On' if self._stealth_enabled() else 'Off'}]")
+            else:
+                visible_items.append(item)
+        snapshot = {
+            'visible': bool(self.menu_visible),
+            'current_menu': self.current_menu,
+            'title': self._menu_title(),
+            'items': list(visible_items),
+            'index': int(self.current_index),
+            'offset': int(self.menu_item_offset),
+            'selected_label': selected_label,
+            'label_count': int(self.label_count),
+            'show_up_arrow': bool(self.show_up_arrow),
+            'show_down_arrow': bool(self.show_down_arrow),
+            'menu_stack': list(self.menu_stack),
+            'menu_area': tuple(self.menu_area),
+            'menu_positions': list(self.menu_positions),
+            'cursor_position': tuple(self.pos_cursor),
+            'up_position': tuple(self.pos_up),
+            'down_position': tuple(self.pos_down),
+            'cursor_x': int(self.cursor_x),
+            'line_height': int(self.line_height),
+            'standalone_renderer': self._lightmenu_should_draw_locally(),
+        }
+        self._last_snapshot = copy.deepcopy(snapshot)
+        return snapshot
+
     def navigate(self, direction):
+        menu_length = self.get_current_menu_length()
+        if menu_length == 0:
+            return
+        self._ensure_dynamic_menu_state()
         menu_length = self.get_current_menu_length()
         if menu_length == 0:
             return
@@ -538,14 +799,30 @@ class LightMenu(plugins.Plugin):
         # Update arrows
         self.show_up_arrow = self.menu_item_offset > 0
         self.show_down_arrow = self.menu_item_offset + self.label_count < menu_length
+        self._emit_pwnctl_event("navigate", context="lightmenu_open", payload={
+            "direction": direction,
+            "current_menu": self.current_menu,
+            "index": self.current_index,
+            "selected_label": self._selected_label(),
+        })
 
     def select(self):
         if not self.menu_visible:
             return
+        self._ensure_dynamic_menu_state()
 
         menu_items = self._get_current_menu_full_list()
         selected = menu_items[self.current_index]
         action = selected[1]
+        safe_action = {
+            str(key): value if isinstance(value, (str, int, float, bool)) or value is None else str(value)
+            for key, value in action.items()
+        }
+        self._emit_pwnctl_event("select", context="lightmenu_open", payload={
+            "current_menu": self.current_menu,
+            "selected_label": str(selected[0]),
+            "action": safe_action,
+        })
 
         if action['action'] == 'submenu':
             self.menu_stack.append(self.current_menu)
@@ -593,6 +870,15 @@ class LightMenu(plugins.Plugin):
                     class MockRequest:
                         method = "GET"
                     target.on_webhook(cmd, MockRequest())
+            elif action.get('plugin') == 'refacer':
+                refacer = plugins.loaded.get('refacer')
+                if refacer and hasattr(refacer, 'on_pwnctl'):
+                    try:
+                        refacer.on_pwnctl(cmd)
+                    except Exception as e:
+                        logging.error(f"[lightmenu] Refacer command error: {e}")
+                else:
+                    logging.debug("[lightmenu] Refacer command requested but refacer is unavailable")
             self.close_menu()
             return
         elif action['action'] == 'restart':
@@ -607,6 +893,11 @@ class LightMenu(plugins.Plugin):
         self.close_menu()  # Close after action
 
     def back(self):
+        self._emit_pwnctl_event("back", context="lightmenu_open", payload={
+            "current_menu": self.current_menu,
+            "menu_stack": list(self.menu_stack),
+            "index": self.current_index,
+        })
         if self.menu_stack:
             self.current_menu = self.menu_stack.pop()
             self.current_index = 0
@@ -626,9 +917,23 @@ class LightMenu(plugins.Plugin):
         if not self.menu_visible:
             self.menu_visible = True
             self.last_activity_time = time.time()
+            self._ensure_dynamic_menu_state()
             self.add_elements = True
             self.update_labels = True
             self.move_cursor = True
+            self._claim_pwnctl_context()
+            self._refresh_pwnctl_registry_once("open_menu")
+            self._emit_pwnctl_event("opened", context="lightmenu_open", payload=self._last_snapshot or {})
+
+            # Always purge stale local widgets first.
+            self._remove_local_menu_elements()
+            self.up_arrow_visible = False
+            self.down_arrow_visible = False
+
+            if not self._lightmenu_should_draw_locally():
+                self._last_snapshot = self.get_menu_snapshot()
+                self._request_redraw()
+                return
             
             x, y, w, h = self.menu_area
             view.ROOT.add_element('menubg', FilledRect((x, y, x + w, y + h), WHITE))
@@ -638,6 +943,7 @@ class LightMenu(plugins.Plugin):
                 key = f'menuitem{i}'
                 pos = self.menu_positions[i]
                 view.ROOT.add_element(key, LabeledValue(color=BLACK, label='', value=' ', position=pos, label_font=fonts.Medium, text_font=fonts.Medium))
+            self._request_redraw()
 
     def close_menu(self):
         if self.menu_visible:
@@ -647,19 +953,13 @@ class LightMenu(plugins.Plugin):
                 self.current_menu = 'Main menu'
                 self.current_index = 0
                 self.menu_item_offset = 0
+            self._last_snapshot = self.get_menu_snapshot()
+            self._release_pwnctl_context()
+            self._emit_pwnctl_event("closed", context="lightmenu_open", payload=self._last_snapshot or {})
 
-            try:
-                view.ROOT.remove_element('menubg')
-                view.ROOT.remove_element('menuborder')
-                for i in range(self.label_count):
-                    view.ROOT.remove_element(f'menuitem{i}')
-                view.ROOT.remove_element('menucursor')
-                if self.up_arrow_visible:
-                    view.ROOT.remove_element('menuup')
-                if self.down_arrow_visible:
-                    view.ROOT.remove_element('menudown')
-            except Exception:
-                pass
+            # Remove any legacy local menu remnants even when Refacer owns the menu render.
+            self._remove_local_menu_elements()
+            self._request_redraw()
 
     def update_ui(self):
         if self.add_elements:

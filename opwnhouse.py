@@ -1370,7 +1370,7 @@ window.addEventListener('resize', () => {
 """
 
 class OpwnHouse(plugins.Plugin):
-    __author__ = '@V0rT3x'
+    __author__ = 'V0rT3x'
     __version__ = '1.0.0'
     __license__ = 'GPL3'
     __description__ = 'A plugin to display closest cracked networks & their passwords'

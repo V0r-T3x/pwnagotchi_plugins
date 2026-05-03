@@ -2,6 +2,8 @@
 Configuration options for btleash plugin:
 main.plugins.bt-leash.mac = "XX:XX:XX:XX:XX:XX"  # Phone MAC address
 main.plugins.bt-leash.auto_reconnect = false  # Auto reconnect the tether connection
+main.plugins.bt-leash.max_reconnects_per_hour = 3  # Default: 3
+main.plugins.bt-leash.initial_backoff = 60         # Seconds
 main.plugins.bt-leash.position = [  # Position on the screen
  x,
  y,
@@ -296,7 +298,7 @@ TEMPLATE = """
 """
 
 class BTLeash(plugins.Plugin):
-    __author__ = "@V0rT3x"
+    __author__ = "V0rT3x"
     __version__ = "1.0.0"
     __license__ = "GPL3"
     __description__ = "A complete Bluetooth tethering and device manager plugin with multi-device support."
@@ -315,20 +317,29 @@ class BTLeash(plugins.Plugin):
         self.running = False
         self.ui = None
         self.ui_position = None
+        self.reconnect_attempts = 0
+        self.last_reconnect = 0
+        self.backoff_time = 60  # Start with 1min backoff
+        self.paused_until = 0   # Deadman pause timer
         
-    def on_loaded(self):
-        self.log("Plugin loaded.")
+    def connect_dbus(self):
         if DBUS_AVAILABLE:
             try:
-                # dbus.mainloop.glib.DBusGMainLoop(set_as_default=True) # Avoid if possible to not conflict
                 self.bus = dbus.SystemBus()
                 self.manager = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
                 self.adapter = dbus.Interface(self.bus.get_object("org.bluez", "/org/bluez/hci0"), "org.bluez.Adapter1")
                 self.log("DBus SystemBus connected.")
+                return True
             except Exception as e:
                 self.log(f"Error connecting to DBus: {e}")
-        else:
+        return False
+
+    def on_loaded(self):
+        self.log("Plugin loaded.")
+        if not DBUS_AVAILABLE:
             self.log("DBus python module not found.")
+        else:
+            self.connect_dbus()
 
         self.tether_mac = self.options.get('mac', '')
         self.auto_reconnect = self.options.get('auto_reconnect', False)
@@ -631,6 +642,18 @@ class BTLeash(plugins.Plugin):
         save_config(config, '/etc/pwnagotchi/config.toml')
 
     def connect_tether(self, mac):
+        """Safer connect - check dbus health first"""
+        if not self.bus:
+            self.log("No D-Bus, skipping connect")
+            return False
+        
+        try:
+            # Quick D-Bus health check before hammering
+            self.manager.GetManagedObjects()  # Will fail if bluetoothd crashed
+        except:
+            self.log("D-Bus unresponsive, skipping connect")
+            return False
+
         try:
             dev_path = f"/org/bluez/hci0/dev_{mac.replace(':', '_').upper()}"
             dev_obj = self.bus.get_object("org.bluez", dev_path)
@@ -642,24 +665,59 @@ class BTLeash(plugins.Plugin):
             threading.Thread(target=self.run_dhcp).start()
             return True
         except Exception as e:
+            if "Already Connected" in str(e) or "In Progress" in str(e):
+                self.log("Connection active, refreshing DHCP...")
+                threading.Thread(target=self.run_dhcp).start()
+                return True
             self.log(f"Connect failed: {e}")
             return False
 
     def worker(self):
+        health_strikes = 0
         while self.running:
-            if self.auto_reconnect and self.tether_mac:
-                # Check if connected (IP exists)
-                if not self.get_ip_address("bnep0"):
-                    # Not connected, try to connect
-                    # We check if device object exists first to avoid spamming logs if device is completely gone/unpaired
-                    try:
-                        dev_path = f"/org/bluez/hci0/dev_{self.tether_mac.replace(':', '_').upper()}"
-                        self.bus.get_object("org.bluez", dev_path)
-                        # If object exists, try connect
-                        self.connect_tether(self.tether_mac)
-                    except:
-                        pass
-            time.sleep(15)
+            try:
+                # BT HEALTH CHECK (safe, doesn't touch D-Bus)
+                output = subprocess.check_output(['hciconfig', 'hci0'], text=True)
+                if 'DOWN' in output:
+                    health_strikes += 1
+                else:
+                    health_strikes = 0
+                
+                # Only restart BT service on CRITICAL failure (3 strikes)
+                if health_strikes >= 3:
+                    self.log("Bluetooth chipset unhealthy. Restarting service...")
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'bluetooth'], timeout=10)
+                    time.sleep(30)  # Give it time to recover
+                    self.connect_dbus()
+                    health_strikes = 0
+                    continue
+                
+                # TETHER CHECK (only if healthy AND autoreconnect enabled)
+                if (self.auto_reconnect and self.tether_mac and 
+                    time.time() - self.last_reconnect > 3600):  # Once per hour max
+                    
+                    if not self.get_ip_address('bnep0') and time.time() > self.paused_until:
+                        self.reconnect_attempts += 1
+                        
+                        if self.reconnect_attempts <= 3:  # Max 3 tries/hour
+                            self.log(f"Reconnect attempt {self.reconnect_attempts}/3")
+                            if self.connect_tether(self.tether_mac):
+                                self.current_ip = self.get_ip_address('bnep0')
+                                self.reconnect_attempts = 0  # Reset on success
+                                self.backoff_time = 60  # Reset backoff
+                            else:
+                                self.backoff_time *= 2  # Exponential backoff
+                                self.paused_until = time.time() + self.backoff_time
+                                self.log(f"Connect failed, backing off {self.backoff_time//60}m")
+                        else:
+                            self.paused_until = time.time() + 600  # 10m deadman pause
+                            self.log("Max reconnects hit. Pausing 10m.")
+                
+                time.sleep(60)  # SLEEP 60s BETWEEN FULL CYCLES (was 15s)
+                
+            except Exception as e:
+                self.log(f"Worker error: {e}")
+                time.sleep(60)
 
     def pair_device_wrapper(self, mac):
         self.pin = None
@@ -740,9 +798,10 @@ class BTLeash(plugins.Plugin):
 
     def run_dhcp(self):
         time.sleep(2)
-        self.log("Running DHCP on bnep0...")
+        self.log("Refreshing DHCP on bnep0...")
         try:
-            subprocess.run(["dhclient", "bnep0"], timeout=15, capture_output=True)
+            subprocess.run(["dhclient", "-r", "bnep0"], timeout=5, capture_output=True)
+            subprocess.run(["dhclient", "bnep0", "-v", "-1"], timeout=15, capture_output=True)
             ip = self.get_ip_address("bnep0")
             if ip:
                 self.log(f"Got IP: {ip}")

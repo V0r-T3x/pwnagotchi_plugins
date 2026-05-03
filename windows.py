@@ -90,168 +90,388 @@ LOGO = """░░░░░░░░░░░░░░░░░░░░░░░�
 INDEX = """
 {% extends "base.html" %}
 {% set active_page = "plugins" %}
-{% block title %}
-    Windows
-{% endblock %}
+{% block title %}Windows{% endblock %}
 {% block meta %}
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=0" />
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
 {% endblock %}
 {% block styles %}
 {{ super() }}
 <style>
-    .ui-image {
-        width: 100%;
-        max-width: 400px;
-        border: 1px solid #ccc;
-    }
-    .pixelated {
-        image-rendering: pixelated;
-        image-rendering: -moz-crisp-edges;
-        image-rendering: crisp-edges;
-    }
-    .container {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 20px;
-        margin-top: 20px;
-    }
-    .column {
-        flex: 1;
-        min-width: 300px;
-        max-width: 400px;
-        text-align: center;
-    }
+    #windows-manager { padding: 15px; }
+    .windows-card { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 5px; background: #f9f9f9; }
+    .windows-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
+    .windows-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+    .windows-preview { width: 100%; max-width: 420px; border: 1px solid #bbb; background: #fff; image-rendering: pixelated; }
+    .windows-status { min-height: 20px; font-weight: bold; white-space: pre-wrap; }
+    .windows-muted { color: #555; font-size: 0.9em; }
+    .windows-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .windows-form-grid label { display: block; font-weight: bold; margin-bottom: 3px; }
+    .windows-form-grid input, .windows-form-grid select { width: 100%; box-sizing: border-box; }
+    .windows-list { margin: 0; padding-left: 18px; }
 </style>
 {% endblock %}
 {% block content %}
-    <div data-role="navbar">
-        <ul>
-            <li><a href="#" onclick="display_hijack(); this.blur(); return false;" data-icon="eye">Second hardware display</a></li>
-            <li><a href="#" onclick="display_pwny(); this.blur(); return false;" data-icon="home">Pwnagotchi hardware display</a></li>
-        </ul>
-    </div>
-    <div data-role="navbar">
-        <ul>
-            <li><a href="#" onclick="display_previous(); this.blur(); return false;" data-icon="arrow-l">Previous Mode</a></li>
-            <li><a href="#" onclick="display_next(); this.blur(); return false;" data-icon="arrow-r">Next Mode</a></li>
-        </ul>
-    </div>
-    <div data-role="navbar">
-        <ul>
-            <li><a href="#" onclick="screen_saver_previous(); this.blur(); return false;" data-icon="back">Prev Saver</a></li>
-            <li><a href="#" onclick="screen_saver_next(); this.blur(); return false;" data-icon="forward">Next Saver</a></li>
-        </ul>
-    </div>
-
-    <div class="container">
-        <div class="column">
-            <h3>Pwnagotchi UI</h3>
-            <img class="ui-image pixelated" src="/ui" id="ui" alt="Pwnagotchi UI" />
+<div id="windows-manager">
+    <h2>Windows Manager</h2>
+    <div id="windows-main-status" class="windows-status">Loading...</div>
+    <div data-role="tabs" id="windows-tabs">
+        <div data-role="navbar">
+            <ul>
+                <li><a href="#windows-manager-tab" class="ui-btn-active">Manager</a></li>
+                <li><a href="#windows-saver-tab">Screen Saver</a></li>
+                <li><a href="#windows-aux-tab">Aux</a></li>
+                <li><a href="#windows-config-tab">Configuration</a></li>
+            </ul>
         </div>
-        <div class="column">
-            <h3>Second Screen</h3>
-            <img class="ui-image pixelated" src="/plugins/windows/ui2" id="ui2" alt="Second Screen" />
+        <div id="windows-manager-tab" class="ui-content">
+            <div class="windows-grid">
+                <div class="windows-card">
+                    <h3>Pwnagotchi UI</h3>
+                    <img class="windows-preview" src="/ui" id="windows-ui" alt="Pwnagotchi UI">
+                </div>
+                <div class="windows-card">
+                    <h3>Second Screen</h3>
+                    <img class="windows-preview" src="/plugins/windows/ui2" id="windows-ui2" alt="Second Screen">
+                </div>
+            </div>
+            <div class="windows-card">
+                <h3>Runtime Controls</h3>
+                <div class="windows-actions">
+                    <button id="windows-second-screen-btn" class="ui-btn ui-btn-inline ui-corner-all">Second Screen: Off</button>
+                    <button id="windows-pwny-btn" class="ui-btn ui-btn-inline ui-corner-all">Pwny Screen</button>
+                    <button id="windows-start-saver-btn" class="ui-btn ui-btn-inline ui-corner-all">Start Screen Saver</button>
+                    <button id="windows-stop-saver-btn" class="ui-btn ui-btn-inline ui-corner-all">Stop Screen Saver</button>
+                    <button id="windows-reset-runtime-btn" class="ui-btn ui-corner-all">Reset Runtime to Defaults</button>
+                    <button id="windows-refresh-btn" class="ui-btn ui-corner-all">Refresh</button>
+                </div>
+                <ul id="windows-status-list" class="windows-list"></ul>
+            </div>
+        </div>
+        <div id="windows-saver-tab" class="ui-content">
+            <div class="windows-card">
+                <h3>Screen Saver Runtime</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-runtime-saver">Current screen saver</label><select id="windows-runtime-saver"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-apply-saver-btn" class="ui-btn ui-btn-inline ui-corner-all">Apply Now</button>
+                    <button id="windows-start-this-saver-btn" class="ui-btn ui-btn-inline ui-corner-all">Start This Saver Now</button>
+                    <button id="windows-prev-saver-btn" class="ui-btn ui-corner-all">Previous Saver</button>
+                    <button id="windows-next-saver-btn" class="ui-btn ui-corner-all">Next Saver</button>
+                </div>
+            </div>
+            <div class="windows-card">
+                <h3>Screen Saver Defaults</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-default-saver">Default screen saver</label><select id="windows-default-saver"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-save-saver-default-btn" class="ui-btn ui-btn-inline ui-corner-all">Save as Default</button>
+                    <button id="windows-save-saver-apply-btn" class="ui-btn ui-btn-inline ui-corner-all">Save as Default + Apply Now</button>
+                </div>
+            </div>
+            <div class="windows-card">
+                <h3>Screen Saver Options</h3>
+                <div class="windows-form-grid">
+                    <div><label for="opt-moving-shapes-text">Moving text</label><input id="opt-moving-shapes-text" type="text"></div>
+                    <div><label for="opt-moving-shapes-color">Moving color</label><input id="opt-moving-shapes-color" type="text"></div>
+                    <div><label for="opt-moving-shapes-speed">Moving speed</label><input id="opt-moving-shapes-speed" type="number"></div>
+                    <div><label for="opt-moving-shapes-font-size">Moving font size</label><input id="opt-moving-shapes-font-size" type="number"></div>
+                    <div><label for="opt-moving-shapes-font-path">Moving font path</label><input id="opt-moving-shapes-font-path" type="text"></div>
+                    <div><label for="opt-random-colors-speed">Random colors speed</label><input id="opt-random-colors-speed" type="number"></div>
+                    <div><label for="opt-hyper-drive-stars">Hyper drive stars</label><input id="opt-hyper-drive-stars" type="number"></div>
+                    <div><label for="opt-hyper-drive-speed">Hyper drive speed</label><input id="opt-hyper-drive-speed" type="number" step="0.1"></div>
+                    <div><label for="opt-animation-frames-path">Animation frames path</label><input id="opt-animation-frames-path" type="text"></div>
+                    <div><label for="opt-animation-max-loops">Animation max loops</label><input id="opt-animation-max-loops" type="number"></div>
+                    <div><label for="opt-animation-total-duration">Animation total duration</label><input id="opt-animation-total-duration" type="number"></div>
+                </div>
+            </div>
+        </div>
+        <div id="windows-aux-tab" class="ui-content">
+            <div class="windows-card">
+                <h3>Aux Runtime</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-runtime-aux">Current aux plugin</label><select id="windows-runtime-aux"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-apply-aux-btn" class="ui-btn ui-btn-inline ui-corner-all">Apply Aux Plugin</button>
+                    <button id="windows-start-aux-btn" class="ui-btn ui-btn-inline ui-corner-all">Start Auxiliary Mode</button>
+                    <button id="windows-prev-aux-btn" class="ui-btn ui-corner-all">Previous Aux</button>
+                    <button id="windows-next-aux-btn" class="ui-btn ui-corner-all">Next Aux</button>
+                </div>
+            </div>
+            <div class="windows-card">
+                <h3>Aux Defaults</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-default-aux">Default aux plugin</label><select id="windows-default-aux"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-save-aux-default-btn" class="ui-btn ui-btn-inline ui-corner-all">Save Default Aux</button>
+                    <button id="windows-save-aux-apply-btn" class="ui-btn ui-btn-inline ui-corner-all">Save Default Aux + Apply Now</button>
+                </div>
+                <div id="windows-aux-status" class="windows-status"></div>
+            </div>
+        </div>
+        <div id="windows-config-tab" class="ui-content">
+            <div class="windows-card">
+                <h3>Runtime</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-runtime-fps">FPS</label><input id="windows-runtime-fps" type="number"></div>
+                    <div><label for="windows-runtime-mode">Mode</label><select id="windows-runtime-mode"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-apply-fps-btn" class="ui-btn ui-btn-inline ui-corner-all">Apply FPS Now</button>
+                    <button id="windows-apply-mode-btn" class="ui-btn ui-btn-inline ui-corner-all">Apply Mode Now</button>
+                </div>
+            </div>
+            <div class="windows-card">
+                <h3>Defaults</h3>
+                <div class="windows-form-grid">
+                    <div><label for="windows-default-fps">Default FPS</label><input id="windows-default-fps" type="number"></div>
+                    <div><label for="windows-default-rotation">Default rotation</label><input id="windows-default-rotation" type="number"></div>
+                    <div><label for="windows-default-mode">Default mode</label><select id="windows-default-mode"></select></div>
+                    <div><label for="windows-default-saver-config">Default screen saver</label><select id="windows-default-saver-config"></select></div>
+                    <div><label for="windows-default-aux-config">Default aux plugin</label><select id="windows-default-aux-config"></select></div>
+                </div>
+                <div class="windows-actions">
+                    <button id="windows-save-config-btn" class="ui-btn ui-btn-inline ui-corner-all">Save Defaults</button>
+                    <button id="windows-save-config-reset-btn" class="ui-btn ui-btn-inline ui-corner-all">Save Defaults + Reset Runtime</button>
+                    <button id="windows-reload-config-btn" class="ui-btn ui-corner-all">Reload</button>
+                </div>
+                <div id="windows-config-status" class="windows-status"></div>
+            </div>
         </div>
     </div>
+</div>
 {% endblock %}
 {% block script %}
-$(document).ready(function() {
-    $("[data-role='navbar'] a").click(function() {
-        setTimeout(function() {
-            $("[data-role='navbar'] a").removeClass("ui-btn-active");
-        }, 100);
-    });
-});
-
-function loadJSON(url, callback) {
-    var xobj = new XMLHttpRequest();
-    xobj.overrideMimeType("application/json");
-    xobj.open('GET', url, true);
-    xobj.onreadystatechange = function () {
-        if (xobj.readyState == 4 && xobj.status == "200") {
-            callback(JSON.parse(xobj.responseText));
+var windowsStatus = null;
+var windowsPreviewTimer = null;
+function windowsPath(path) {
+    var base = window.location.pathname.replace(/\/+$/, "");
+    return base + (path ? "/" + path : "");
+}
+function requestJSON(method, path, data, onSuccess, statusId) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, windowsPath(path), true);
+    var tokenEl = document.querySelector("meta[name='csrf-token']");
+    if (tokenEl && tokenEl.content) xhr.setRequestHeader("X-CSRFToken", tokenEl.content);
+    if (data !== null) xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) return;
+        var body = {};
+        try { body = xhr.responseText ? JSON.parse(xhr.responseText) : {}; } catch (e) { body = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+            if (onSuccess) onSuccess(body);
+        } else if (statusId) {
+            setStatus(statusId, body.error || body.message || ("Request failed (" + xhr.status + ")"), true);
         }
     };
-    xobj.send(null);
+    xhr.send(data === null ? null : JSON.stringify(data));
 }
-
-function display_hijack() {
-    loadJSON("windows/display_hijack", function(response) {
-        console.log(response.message);
-    });
+function setStatus(id, msg, isError) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = isError ? "#a40000" : "#1f5f1f";
 }
-function display_pwny() {
-    loadJSON("windows/display_pwny", function(response) {
-        console.log(response.message);
-    });
-}
-function display_next() {
-    loadJSON("windows/display_next", function(response) {
-        console.log(response.message);
-    });
-}
-function display_previous() {
-    loadJSON("windows/display_previous", function(response) {
-        console.log(response.message);
-    });
-}
-function screen_saver_next() {
-    loadJSON("windows/screen_saver_next", function(response) {
-        console.log(response.message);
-    });
-}
-function screen_saver_previous() {
-    loadJSON("windows/screen_saver_previous", function(response) {
-        console.log(response.message);
-    });
-}
-
-function cacheImage(img, key) {
-    try {
-        var canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        var ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        var dataURL = canvas.toDataURL("image/png");
-        localStorage.setItem(key, dataURL);
-    } catch(e) {
-        console.log("Error caching image: " + e);
+function fillSelect(id, values, selected, includeBlank) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = "";
+    if (includeBlank) {
+        var blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "None";
+        el.appendChild(blank);
     }
+    (values || []).forEach(function(value) {
+        var opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        if (value === selected) opt.selected = true;
+        el.appendChild(opt);
+    });
 }
-
-function loadCachedImage(key, imgElement) {
-    var dataURL = localStorage.getItem(key);
-    if (dataURL) {
-        imgElement.src = dataURL;
+function optionValue(id, fallback) {
+    var el = document.getElementById(id);
+    return el ? el.value : fallback;
+}
+function optionInt(id, fallback) {
+    var v = parseInt(optionValue(id, fallback), 10);
+    return isNaN(v) ? fallback : v;
+}
+function optionFloat(id, fallback) {
+    var v = parseFloat(optionValue(id, fallback));
+    return isNaN(v) ? fallback : v;
+}
+function collectOptionsPatch() {
+    return {
+        moving_shapes_text: optionValue("opt-moving-shapes-text", "Windows"),
+        moving_shapes_color: optionValue("opt-moving-shapes-color", "red"),
+        moving_shapes_speed: optionInt("opt-moving-shapes-speed", 10),
+        moving_shapes_font_size: optionInt("opt-moving-shapes-font-size", 15),
+        moving_shapes_font_path: optionValue("opt-moving-shapes-font-path", ""),
+        random_colors_speed: optionInt("opt-random-colors-speed", 1),
+        hyper_drive_stars: optionInt("opt-hyper-drive-stars", 100),
+        hyper_drive_speed: optionFloat("opt-hyper-drive-speed", 1.0),
+        animation_frames_path: optionValue("opt-animation-frames-path", ""),
+        animation_max_loops: optionInt("opt-animation-max-loops", 1),
+        animation_total_duration: optionInt("opt-animation-total-duration", 10)
+    };
+}
+function renderStatus(body) {
+    windowsStatus = body || {};
+    var modes = windowsStatus.screen_modes || [];
+    var savers = windowsStatus.screen_saver_modes || [];
+    var aux = windowsStatus.aux_plugins || [];
+    fillSelect("windows-runtime-mode", modes, windowsStatus.current_mode, false);
+    fillSelect("windows-default-mode", modes, windowsStatus.default_mode, false);
+    fillSelect("windows-runtime-saver", savers, windowsStatus.current_screen_saver, false);
+    fillSelect("windows-default-saver", savers, windowsStatus.default_screen_saver, false);
+    fillSelect("windows-default-saver-config", savers, windowsStatus.default_screen_saver, false);
+    fillSelect("windows-runtime-aux", aux, windowsStatus.current_aux_plugin || "", true);
+    fillSelect("windows-default-aux", aux, windowsStatus.default_aux_plugin || "", true);
+    fillSelect("windows-default-aux-config", aux, windowsStatus.default_aux_plugin || "", true);
+    document.getElementById("windows-runtime-fps").value = windowsStatus.fps || 24;
+    document.getElementById("windows-default-fps").value = (windowsStatus.options || {}).fps || windowsStatus.fps || 24;
+    document.getElementById("windows-default-rotation").value = (windowsStatus.options || {}).rotation || 0;
+    var opts = windowsStatus.options || {};
+    document.getElementById("opt-moving-shapes-text").value = opts.moving_shapes_text || "Windows";
+    document.getElementById("opt-moving-shapes-color").value = opts.moving_shapes_color || "red";
+    document.getElementById("opt-moving-shapes-speed").value = opts.moving_shapes_speed || 10;
+    document.getElementById("opt-moving-shapes-font-size").value = opts.moving_shapes_font_size || 15;
+    document.getElementById("opt-moving-shapes-font-path").value = opts.moving_shapes_font_path || "";
+    document.getElementById("opt-random-colors-speed").value = opts.random_colors_speed || 1;
+    document.getElementById("opt-hyper-drive-stars").value = opts.hyper_drive_stars || 100;
+    document.getElementById("opt-hyper-drive-speed").value = opts.hyper_drive_speed || 1.0;
+    document.getElementById("opt-animation-frames-path").value = opts.animation_frames_path || "";
+    document.getElementById("opt-animation-max-loops").value = opts.animation_max_loops || 1;
+    document.getElementById("opt-animation-total-duration").value = opts.animation_total_duration || 10;
+    var btn = document.getElementById("windows-second-screen-btn");
+    if (btn) {
+        btn.textContent = "Second Screen: " + (windowsStatus.dispHijack ? "On" : "Off");
+        btn.dataset.enabled = windowsStatus.dispHijack ? "1" : "0";
     }
-}
-
-window.onload = function() {
-    var image = document.getElementById("ui");
-    var image2 = document.getElementById("ui2");
-    
-    loadCachedImage("ui_cache", image);
-    loadCachedImage("ui2_cache", image2);
-
-    function updateImage() {
-        var tmp_image = new Image();
-        tmp_image.src = "/ui?" + new Date().getTime();
-        tmp_image.onload = function() {
-            image.src = this.src;
-            cacheImage(this, "ui_cache");
-        }
-        var tmp_image2 = new Image();
-        tmp_image2.src = "/plugins/windows/ui2?" + new Date().getTime();
-        tmp_image2.onload = function() {
-            image2.src = this.src;
-            cacheImage(this, "ui2_cache");
-        }
+    var rows = [
+        ["Hijack", windowsStatus.dispHijack ? "On" : "Off"],
+        ["Controller", windowsStatus.controller_running ? "Running" : "Stopped"],
+        ["Current mode", windowsStatus.current_mode || ""],
+        ["Current saver", windowsStatus.current_screen_saver || ""],
+        ["Current aux", windowsStatus.current_aux_plugin || "None"],
+        ["Default mode", windowsStatus.default_mode || ""],
+        ["Default saver", windowsStatus.default_screen_saver || ""],
+        ["Default aux", windowsStatus.default_aux_plugin || "None"]
+    ];
+    var list = document.getElementById("windows-status-list");
+    if (list) {
+        list.innerHTML = "";
+        rows.forEach(function(row) {
+            var li = document.createElement("li");
+            li.textContent = row[0] + ": " + row[1];
+            list.appendChild(li);
+        });
     }
-    setInterval(updateImage, 1000);
+    setStatus("windows-main-status", "Runtime " + (windowsStatus.current_mode || "unknown") + " / " + (windowsStatus.current_screen_saver || "none"), false);
+    setStatus("windows-aux-status", "Runtime aux: " + (windowsStatus.current_aux_plugin || "None") + " | Default aux: " + (windowsStatus.default_aux_plugin || "None"), false);
 }
+function refreshStatus() { requestJSON("GET", "status", null, renderStatus, "windows-main-status"); }
+function refreshPreviews() {
+    var ui = document.getElementById("windows-ui");
+    var ui2 = document.getElementById("windows-ui2");
+    if (ui) ui.src = "/ui?t=" + Date.now();
+    if (ui2) ui2.src = windowsPath("ui2") + "?t=" + Date.now();
+}
+function startPreviewRefresh() {
+    if (windowsPreviewTimer) window.clearInterval(windowsPreviewTimer);
+    windowsPreviewTimer = window.setInterval(refreshPreviews, 1000);
+    refreshPreviews();
+}
+function setSecondScreen(enabled) {
+    requestJSON("GET", enabled ? "display_hijack" : "display_pwny", null, function(body) { renderStatus(body); refreshPreviews(); }, "windows-main-status");
+}
+function startScreenSaver(subMode) {
+    requestJSON("GET", "screen_saver_start", null, function(body) { renderStatus(body); refreshPreviews(); }, "windows-main-status");
+}
+function stopScreenSaver() {
+    requestJSON("GET", "screen_saver_stop", null, function(body) { renderStatus(body); refreshPreviews(); }, "windows-main-status");
+}
+function applyRuntimeMode(mode) {
+    requestJSON("POST", "set_mode", {mode: mode, apply_now: true}, renderStatus, "windows-config-status");
+}
+function applyRuntimeSaver(subMode) {
+    requestJSON("POST", "set_screen_saver", {sub_mode: subMode, apply_now: true, options_patch: collectOptionsPatch()}, renderStatus, "windows-main-status");
+}
+function applyRuntimeAux(name) {
+    requestJSON("POST", "set_aux", {plugin: name, apply_now: true}, renderStatus, "windows-aux-status");
+}
+function saveDefaults(applyNow) {
+    var patch = collectOptionsPatch();
+    patch.fps = optionInt("windows-default-fps", 24);
+    patch.rotation = optionInt("windows-default-rotation", 0);
+    patch.default_mode = optionValue("windows-default-mode", "screen_saver");
+    patch.default_screen_saver = optionValue("windows-default-saver-config", optionValue("windows-default-saver", "show_logo"));
+    patch.default_aux_plugin = optionValue("windows-default-aux-config", optionValue("windows-default-aux", ""));
+    requestJSON("POST", "save_config", {options: patch, reset_runtime: !!applyNow}, function(body) {
+        renderStatus(body);
+        setStatus("windows-config-status", "Defaults saved.", false);
+    }, "windows-config-status");
+}
+function saveSaverDefault(applyNow) {
+    requestJSON("POST", "set_screen_saver", {
+        sub_mode: optionValue("windows-default-saver", "show_logo"),
+        persist: true,
+        apply_now: !!applyNow,
+        options_patch: collectOptionsPatch()
+    }, renderStatus, "windows-main-status");
+}
+function saveAuxDefault(applyNow) {
+    requestJSON("POST", "set_aux", {plugin: optionValue("windows-default-aux", ""), persist: true, apply_now: !!applyNow}, renderStatus, "windows-aux-status");
+}
+function resetRuntimeToDefaults() {
+    requestJSON("POST", "reset_runtime_defaults", {}, function(body) { renderStatus(body); refreshPreviews(); }, "windows-main-status");
+}
+function bindWindowsActions() {
+    var bindings = [
+        ["windows-second-screen-btn", function() { setSecondScreen(!(this.dataset.enabled === "1")); }],
+        ["windows-pwny-btn", function() { setSecondScreen(false); }],
+        ["windows-start-saver-btn", function() { startScreenSaver(); }],
+        ["windows-stop-saver-btn", stopScreenSaver],
+        ["windows-reset-runtime-btn", resetRuntimeToDefaults],
+        ["windows-refresh-btn", function() { refreshStatus(); refreshPreviews(); }],
+        ["windows-apply-saver-btn", function() { applyRuntimeSaver(optionValue("windows-runtime-saver", "show_logo")); }],
+        ["windows-start-this-saver-btn", function() { startScreenSaver(optionValue("windows-runtime-saver", "show_logo")); }],
+        ["windows-prev-saver-btn", function() { requestJSON("GET", "screen_saver_previous", null, renderStatus, "windows-main-status"); }],
+        ["windows-next-saver-btn", function() { requestJSON("GET", "screen_saver_next", null, renderStatus, "windows-main-status"); }],
+        ["windows-save-saver-default-btn", function() { saveSaverDefault(false); }],
+        ["windows-save-saver-apply-btn", function() { saveSaverDefault(true); }],
+        ["windows-apply-aux-btn", function() { applyRuntimeAux(optionValue("windows-runtime-aux", "")); }],
+        ["windows-start-aux-btn", function() { applyRuntimeMode("auxiliary"); }],
+        ["windows-prev-aux-btn", function() { requestJSON("GET", "aux_prev", null, renderStatus, "windows-aux-status"); }],
+        ["windows-next-aux-btn", function() { requestJSON("GET", "aux_next", null, renderStatus, "windows-aux-status"); }],
+        ["windows-save-aux-default-btn", function() { saveAuxDefault(false); }],
+        ["windows-save-aux-apply-btn", function() { saveAuxDefault(true); }],
+        ["windows-apply-fps-btn", function() { requestJSON("POST", "apply_runtime", {fps: optionInt("windows-runtime-fps", 24)}, renderStatus, "windows-config-status"); }],
+        ["windows-apply-mode-btn", function() { applyRuntimeMode(optionValue("windows-runtime-mode", "screen_saver")); }],
+        ["windows-save-config-btn", function() { saveDefaults(false); }],
+        ["windows-save-config-reset-btn", function() { saveDefaults(true); }],
+        ["windows-reload-config-btn", refreshStatus]
+    ];
+    bindings.forEach(function(binding) {
+        var el = document.getElementById(binding[0]);
+        if (!el || el.dataset.windowsBound === "1") return;
+        el.addEventListener("click", function(event) { event.preventDefault(); binding[1].call(el); });
+        el.dataset.windowsBound = "1";
+    });
+}
+document.addEventListener("DOMContentLoaded", function() {
+    bindWindowsActions();
+    refreshStatus();
+    startPreviewRefresh();
+    try { if (window.jQuery) window.jQuery("#windows-manager").enhanceWithin(); } catch (e) {}
+});
 {% endblock %}
 """
 
@@ -301,6 +521,8 @@ class Window:
             self.loop.run_until_complete(self.screen_controller())
         except asyncio.CancelledError:
             pass
+        except RuntimeError as ex:
+            logging.debug("[Windows] Display controller loop stopped: %s", ex)
         finally:
             self.loop.close()
             self.is_running_event.clear()
@@ -322,19 +544,36 @@ class Window:
 
     def stop(self):
         self.running = False
-        if self.loop and not self.loop.is_closed():
-            self.loop.call_soon_threadsafe(self.loop.stop)
-        if self.thread:
-            self.thread.join()
+        loop = self.loop
+        thread = self.thread
+        if loop and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(lambda: None)
+            except RuntimeError:
+                pass
+        if thread and threading.current_thread() is not thread:
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logging.warning("[Windows] Display controller thread did not stop cleanly; forcing loop stop.")
+                if loop and not loop.is_closed():
+                    try:
+                        loop.call_soon_threadsafe(loop.stop)
+                    except RuntimeError:
+                        pass
+                thread.join(timeout=1.0)
+                if thread.is_alive():
+                    logging.warning("[Windows] Display controller thread is still alive after forced stop.")
         self.loop = None
         self.thread = None
+        self.is_running_event.clear()
         logging.debug("[Windows] Display controller stopped.")
 
     async def screen_controller(self):
         self.running = True
-        while self.running:
-            await self.refacer()
-            await asyncio.sleep(0.1)
+        try:
+            await self.render_loop()
+        finally:
+            self.is_running_event.clear()
 
     def is_running(self):
         if self.is_running_event is not None:
@@ -367,12 +606,12 @@ class Window:
     def screen(self):
         return  self.hijack_frame
 
-    async def refacer(self):
-        try: 
-            fps = 1 / self.fps 
+    async def render_loop(self):
+        try:
             refresh_interval = 1
             iteration = 0
             while self.running:
+                delay = 1.0 / max(1, int(self.fps or 1))
                 if iteration % refresh_interval == 0:
                     self.hijack_frame = self.get_mode_image()
 
@@ -386,17 +625,21 @@ class Window:
                         canvas = canvas.rotate(270, expand=True)
 
                     canvas.save(WINDOWS)
-                    if self.enabled:
+                    if self.running and self.enabled and self.displayImpl is not None:
                         canvas = canvas.resize((self._res[0], self._res[1])).convert(self._col)
                         self.displayImpl.render(canvas)
                 else:
                     logging.warning("[Windows] No image to display.")
                 
-                await asyncio.sleep(fps)
+                await asyncio.sleep(delay)
                 iteration += 1
 
         except asyncio.CancelledError:
-            logging.warning("[Windows] refacer cancelled.")
+            logging.warning("[Windows] render loop cancelled.")
+        except Exception as ex:
+            logging.error("[Windows] render loop error: %s", ex)
+            logging.error(traceback.format_exc())
+            self.running = False
     def display_hijack(self):
         try:
             args = argparse.Namespace(
@@ -451,17 +694,17 @@ class Window:
 
         return '\n'.join(glitched_lines)
 
-    def set_mode(self, mode, sub_mode=None, config={}):
+    def set_mode(self, mode, sub_mode=None, config=None):
         if mode in self.modes:
             logging.debug(f"[Windows] Switching to mode: {mode}")
             self.current_mode = mode
+            self.screen_data = copy.deepcopy(config or {})
             if mode == "screen_saver":
                 self.set_screen_saver_mode(sub_mode)
-                self.screen_cdata = config
             elif mode == "auxiliary":
-                self.screen_data = config
+                pass
             elif mode == "terminal":
-                self.screen_data = config 
+                pass
         else:
             logging.warning(f"[Windows] Invalid mode: {mode}. Available modes are: {self.modes}")
     
@@ -541,23 +784,24 @@ class Window:
         if sub_mode in self.screen_saver_modes:
             logging.debug(f"[Windows] Switching screen_saver to: {sub_mode}")
             self.current_screen_saver = sub_mode
+            base = copy.deepcopy(self.screen_data or {})
             if sub_mode == 'show_logo':
-                options = {}
+                options = {k: v for k, v in base.items() if k in ()}
             elif sub_mode == 'moving_shapes':
                 options = {
                     "shape_type": "text", 
-                    "text": "Windows", 
-                    "font_path": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 
-                    "color": "red", 
-                    "speed": 10, 
-                    "font_size": 15,
+                    "text": base.get("text", "Windows"), 
+                    "font_path": base.get("font_path", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"), 
+                    "color": base.get("color", "red"), 
+                    "speed": base.get("speed", 10), 
+                    "font_size": base.get("font_size", 15),
                 }
             elif sub_mode == 'random_colors':
                 options = {
-                    "speed": 1,
+                    "speed": base.get("speed", 1),
                 }
             elif sub_mode == 'hyper_drive':
-                num_stars = 100 
+                num_stars = int(base.get("star_count", base.get("stars_count", 100)) or 100)
                 options = {
                     'stars': [
                         {
@@ -568,15 +812,16 @@ class Window:
                             'color': 'white'
                         } for _ in range(num_stars)
                     ],
-                    'speed': 1.0 
+                    'speed': base.get("speed", 1.0),
+                    'star_count': num_stars,
                 }
             elif sub_mode == 'show_animation':
                 options = {
-                    'frames_path': os.path.join(self.th_path, 'img', 'boot'),
-                    'max_loops': 1,
-                    'total_duration': 10,
+                    'frames_path': base.get('frames_path') or os.path.join(self.th_path, 'img', 'boot'),
+                    'max_loops': base.get('max_loops', 1),
+                    'total_duration': base.get('total_duration', 10),
                 }
-            self.screen_data.update(options)
+            self.screen_data = options
         else:
             logging.warning(f"[Windows] Invalid screen_saver sub-mode: {sub_mode}. Available sub-modes are: {self.screen_saver_modes}")
 
@@ -673,10 +918,27 @@ class Window:
 
         try:
             plugin = plugins.loaded[self.active_aux_plugin]
-            content = plugin.on_aux()
+            aux_context = {
+                "active": True,
+                "plugin": self.active_aux_plugin,
+                "mode": self.current_mode,
+                "width": self._res[0],
+                "height": self._res[1],
+                "rotation": self._rot,
+                "color": self._col,
+                "fps": self.fps,
+                "timestamp": time.time(),
+            }
+            try:
+                content = plugin.on_aux(aux_context)
+            except TypeError:
+                content = plugin.on_aux()
+            if isinstance(content, dict):
+                content = content.get("image")
             if isinstance(content, str):
                 if os.path.exists(content):
-                    return Image.open(content)
+                    with Image.open(content) as img:
+                        return img.copy()
             elif isinstance(content, Image.Image):
                 return content
         except Exception as e:
@@ -886,22 +1148,56 @@ class Windows(plugins.Plugin):
     __version__ = '1.0.0'
     __license__ = 'GPL3'
     __description__ = 'Standalone Second Screen & Display Hijacker'
+    DEFAULT_OPTIONS = {
+        'fps': 24,
+        'rotation': 0,
+        'default_mode': 'screen_saver',
+        'default_screen_saver': 'show_logo',
+        'default_aux_plugin': '',
+        'animation_frames_path': '',
+        'animation_max_loops': 1,
+        'animation_total_duration': 10,
+        'moving_shapes_text': 'Windows',
+        'moving_shapes_color': 'red',
+        'moving_shapes_speed': 10,
+        'moving_shapes_font_size': 15,
+        'moving_shapes_font_path': '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        'random_colors_speed': 1,
+        'hyper_drive_stars': 100,
+        'hyper_drive_speed': 1.0,
+    }
+
     def __init__(self):
         self._config = pwnagotchi.config
         self.second_screen = Image.new('RGBA', (1,1), 'black')
-        self.display_config = {'mode': 'screen_saver', 'sub_mode': 'show_logo'}
         self.screen_modes = ['screen_saver', 'auxiliary', 'terminal']
         self.screen_saver_modes = ['show_logo', 'moving_shapes', 'random_colors', 'hyper_drive', 'show_animation']
         self.dispHijack = False
         self.loop = None
-        self.refacer_thread = None
+        self.render_thread = None
         self._stop_event = threading.Event()
         self._agent = None
         self.ready = False
         self._pwny_root = os.path.dirname(pwnagotchi.__file__)
         self._plug_root = os.path.dirname(os.path.realpath(__file__))
         self.display_controller = None
-        self.fps = 24
+        self._pending_restore_pwny = False
+        if not isinstance(getattr(self, 'options', None), dict):
+            self.options = copy.deepcopy(
+                self._config.get('main', {}).get('plugins', {}).get('windows', {})
+            ) if isinstance(self._config, dict) else {}
+        for key, value in self.DEFAULT_OPTIONS.items():
+            self.options.setdefault(key, value)
+        self.default_mode = self._valid_mode(self.options.get('default_mode'), 'screen_saver')
+        self.default_screen_saver = self._valid_screen_saver(self.options.get('default_screen_saver'), 'show_logo')
+        self.default_aux_plugin = str(self.options.get('default_aux_plugin') or '')
+        self.current_mode = self.default_mode
+        self.current_screen_saver = self.default_screen_saver
+        self.current_aux_plugin = self.default_aux_plugin or None
+        self.runtime_config = {}
+        self.display_config = {}
+        self._sync_display_config_from_runtime()
+        self.fps = self._sanitize_int(self.options.get('fps'), 24, minimum=1)
         self._th_path = ''
         self._res = [128, 64]
         self._color_mode = ['P', 'P']
@@ -910,6 +1206,440 @@ class Windows(plugins.Plugin):
 
         if self.fps_check(): rst = 1
         self.check_and_fix_fb()
+
+    def on_v0rt3x_actions(self):
+        actions = {
+            "windows.status": ("status", "Windows status"),
+            "windows.second_screen": ("second_screen", "Toggle second screen"),
+            "windows.display_pwny": ("display_pwny", "Display pwny"),
+            "windows.display_hijack": ("display_hijack", "Display hijack"),
+            "windows.display_next": ("display_next", "Next display"),
+            "windows.display_previous": ("display_previous", "Previous display"),
+            "windows.screen_saver_start": ("screen_saver_start", "Start screen saver"),
+            "windows.screen_saver_stop": ("screen_saver_stop", "Stop screen saver"),
+            "windows.screen_saver_next": ("screen_saver_next", "Next screen saver"),
+            "windows.screen_saver_previous": ("screen_saver_previous", "Previous screen saver"),
+            "windows.aux_next": ("aux_next", "Next auxiliary"),
+            "windows.aux_prev": ("aux_prev", "Previous auxiliary"),
+            "windows.reset_runtime_defaults": ("reset_runtime_defaults", "Reset runtime defaults"),
+            "windows.set_mode:screen_saver": ("set_mode:screen_saver", "Set screen saver mode"),
+            "windows.set_mode:auxiliary": ("set_mode:auxiliary", "Set auxiliary mode"),
+            "windows.set_mode:terminal": ("set_mode:terminal", "Set terminal mode"),
+        }
+        return {
+            action_id: {
+                "label": label,
+                "plugin": "windows",
+                "cmd": cmd,
+                "category": "windows",
+                "risk": "safe",
+            }
+            for action_id, (cmd, label) in actions.items()
+        }
+
+    def on_v0rt3x_contexts(self):
+        return {
+            "windows_second_screen": {
+                "label": "Windows second screen active",
+                "priority": 70,
+                "owner": "windows",
+            },
+            "windows_saver": {
+                "label": "Windows screen saver active",
+                "priority": 80,
+                "owner": "windows",
+            },
+            "windows_aux": {
+                "label": "Windows auxiliary active",
+                "priority": 75,
+                "owner": "windows",
+            },
+        }
+
+    def _pwnctl(self):
+        return plugins.loaded.get("pwnctl")
+
+    def _emit_pwnctl_event(self, event, context=None, payload=None):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "emit_event"):
+                pwnctl.emit_event("windows", event, context=context, payload=payload or {})
+        except Exception as e:
+            logging.debug(f"[Windows] pwnctl event emit failed: {e}")
+
+    def _claim_pwnctl_context(self, context_id, priority=None, payload=None):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "claim_context"):
+                pwnctl.claim_context("windows", context_id, priority=priority, payload=payload or self.status_payload())
+        except Exception as e:
+            logging.debug(f"[Windows] pwnctl context claim failed: {e}")
+
+    def _release_pwnctl_context(self, context_id):
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "release_context"):
+                pwnctl.release_context("windows", context_id)
+        except Exception as e:
+            logging.debug(f"[Windows] pwnctl context release failed: {e}")
+
+    def _sync_pwnctl_contexts(self, reason="sync"):
+        try:
+            context = None
+            payload = {
+                "reason": reason,
+                "dispHijack": bool(self.dispHijack),
+                "current_mode": self.current_mode,
+                "current_screen_saver": self.current_screen_saver,
+                "current_aux_plugin": self.current_aux_plugin,
+            }
+            if self.dispHijack:
+                self._claim_pwnctl_context("windows_second_screen", priority=70, payload=payload)
+            else:
+                self._release_pwnctl_context("windows_second_screen")
+                self._release_pwnctl_context("windows_saver")
+                self._release_pwnctl_context("windows_aux")
+                self._emit_pwnctl_event("context_sync", context=None, payload=payload)
+                return
+
+            if self.current_mode == "screen_saver":
+                context = "windows_saver"
+                self._claim_pwnctl_context("windows_saver", priority=80, payload=payload)
+                self._release_pwnctl_context("windows_aux")
+            elif self.current_mode == "auxiliary":
+                context = "windows_aux"
+                self._claim_pwnctl_context("windows_aux", priority=75, payload=payload)
+                self._release_pwnctl_context("windows_saver")
+            else:
+                self._release_pwnctl_context("windows_saver")
+                self._release_pwnctl_context("windows_aux")
+            self._emit_pwnctl_event("context_sync", context=context, payload=payload)
+        except Exception as e:
+            logging.debug(f"[Windows] pwnctl context sync failed: {e}")
+
+    def _sanitize_int(self, value, default, minimum=None):
+        try:
+            value = int(value)
+        except Exception:
+            value = default
+        if minimum is not None:
+            value = max(minimum, value)
+        return value
+
+    def _sanitize_float(self, value, default, minimum=None):
+        try:
+            value = float(value)
+        except Exception:
+            value = default
+        if minimum is not None:
+            value = max(minimum, value)
+        return value
+
+    def _valid_mode(self, mode, default=None):
+        mode = str(mode or '').strip()
+        return mode if mode in self.screen_modes else (default or self.screen_modes[0])
+
+    def _valid_screen_saver(self, sub_mode, default=None):
+        sub_mode = str(sub_mode or '').strip()
+        return sub_mode if sub_mode in self.screen_saver_modes else (default or self.screen_saver_modes[0])
+
+    def get_aux_plugins(self):
+        if getattr(self, 'display_controller', None) and hasattr(self.display_controller, 'get_aux_plugins'):
+            try:
+                return self.display_controller.get_aux_plugins()
+            except Exception:
+                pass
+        return sorted([name for name, plugin in plugins.loaded.items() if hasattr(plugin, 'on_aux')])
+
+    def _valid_aux_plugin(self, plugin_name, default=''):
+        plugin_name = str(plugin_name or '').strip()
+        if not plugin_name:
+            return default
+        return plugin_name if plugin_name in self.get_aux_plugins() else default
+
+    def _sync_display_config_from_runtime(self):
+        self.display_config['mode'] = self.current_mode
+        self.display_config['sub_mode'] = self.current_screen_saver
+        self.display_config['config'] = copy.deepcopy(self.runtime_config)
+
+    def _apply_runtime_state(self, mode=None, sub_mode=None, aux_plugin=None, config=None):
+        if mode is not None:
+            self.current_mode = self._valid_mode(mode, self.current_mode)
+        if sub_mode is not None:
+            self.current_screen_saver = self._valid_screen_saver(sub_mode, self.current_screen_saver)
+        if aux_plugin is not None:
+            self.current_aux_plugin = self._valid_aux_plugin(aux_plugin, '') or None
+        if config is not None:
+            self.runtime_config = copy.deepcopy(config or {})
+        self._sync_display_config_from_runtime()
+        controller = getattr(self, 'display_controller', None)
+        if controller is not None:
+            if self.current_aux_plugin and hasattr(controller, 'active_aux_plugin'):
+                controller.active_aux_plugin = self.current_aux_plugin
+            controller.set_mode(
+                self.current_mode,
+                self.current_screen_saver if self.current_mode == 'screen_saver' else None,
+                self.runtime_config,
+            )
+        self._sync_pwnctl_contexts(reason="apply_runtime_state")
+        return self.status_payload()
+
+    def _apply_defaults_from_options(self):
+        for key, value in self.DEFAULT_OPTIONS.items():
+            self.options.setdefault(key, value)
+        self.default_mode = self._valid_mode(self.options.get('default_mode'), 'screen_saver')
+        self.default_screen_saver = self._valid_screen_saver(self.options.get('default_screen_saver'), 'show_logo')
+        self.default_aux_plugin = str(self.options.get('default_aux_plugin') or '')
+        self.fps = self._sanitize_int(self.options.get('fps'), self.DEFAULT_OPTIONS['fps'], minimum=1)
+
+    def _safe_options(self):
+        return {key: copy.deepcopy(self.options.get(key, default)) for key, default in self.DEFAULT_OPTIONS.items()}
+
+    def build_screen_saver_config(self, sub_mode=None, overrides=None):
+        sub_mode = self._valid_screen_saver(sub_mode or self.current_screen_saver or self.default_screen_saver, 'show_logo')
+        if sub_mode == 'moving_shapes':
+            config = {
+                'shape_type': 'text',
+                'text': self.options.get('moving_shapes_text', 'Windows'),
+                'font_path': self.options.get('moving_shapes_font_path', self.DEFAULT_OPTIONS['moving_shapes_font_path']),
+                'color': self.options.get('moving_shapes_color', 'red'),
+                'speed': self._sanitize_int(self.options.get('moving_shapes_speed'), 10, minimum=1),
+                'font_size': self._sanitize_int(self.options.get('moving_shapes_font_size'), 15, minimum=1),
+            }
+        elif sub_mode == 'random_colors':
+            config = {'speed': self._sanitize_int(self.options.get('random_colors_speed'), 1, minimum=1)}
+        elif sub_mode == 'hyper_drive':
+            count = self._sanitize_int(self.options.get('hyper_drive_stars'), 100, minimum=1)
+            config = {
+                'stars': [
+                    {
+                        'position': [random.randint(-self._res[0]//2, self._res[0]//2), random.randint(-self._res[1]//2, self._res[1]//2)],
+                        'velocity': random.uniform(2, 5),
+                        'size': random.uniform(1, 3),
+                        'streak_length': random.uniform(5, 20),
+                        'color': 'white',
+                    } for _ in range(count)
+                ],
+                'speed': self._sanitize_float(self.options.get('hyper_drive_speed'), 1.0, minimum=0.1),
+                'star_count': count,
+            }
+        elif sub_mode == 'show_animation':
+            config = {
+                'frames_path': self.options.get('animation_frames_path') or os.path.join(self._th_path, 'img', 'boot'),
+                'max_loops': self._sanitize_int(self.options.get('animation_max_loops'), 1, minimum=1),
+                'total_duration': self._sanitize_int(self.options.get('animation_total_duration'), 10, minimum=1),
+            }
+        else:
+            config = {}
+        if overrides:
+            config.update(copy.deepcopy(overrides))
+        return config
+
+    def reset_runtime_to_defaults(self):
+        self._apply_defaults_from_options()
+        config = self.build_screen_saver_config(self.default_screen_saver) if self.default_mode == 'screen_saver' else {}
+        payload = self._apply_runtime_state(
+            mode=self.default_mode,
+            sub_mode=self.default_screen_saver,
+            aux_plugin=self.default_aux_plugin,
+            config=config,
+        )
+        self._sync_pwnctl_contexts(reason="reset_runtime_to_defaults")
+        return payload
+
+    def set_display_mode(self, mode, apply_now=True):
+        mode = self._valid_mode(mode, self.current_mode)
+        if apply_now:
+            config = self.build_screen_saver_config(self.current_screen_saver) if mode == 'screen_saver' else {}
+            payload = self._apply_runtime_state(mode=mode, config=config)
+            self._sync_pwnctl_contexts(reason="set_display_mode")
+            return payload
+        self._sync_pwnctl_contexts(reason="set_display_mode")
+        return self.status_payload()
+
+    def set_screen_saver(self, sub_mode, apply_now=True, options_patch=None):
+        sub_mode = self._valid_screen_saver(sub_mode, self.current_screen_saver)
+        if apply_now:
+            payload = self._apply_runtime_state(
+                mode='screen_saver',
+                sub_mode=sub_mode,
+                config=self.build_screen_saver_config(sub_mode, options_patch),
+            )
+            self._emit_pwnctl_event("screen_saver_set", context="windows_saver", payload={"sub_mode": sub_mode})
+            self._sync_pwnctl_contexts(reason="set_screen_saver")
+            return payload
+        self._emit_pwnctl_event("screen_saver_set", context="windows_saver", payload={"sub_mode": sub_mode})
+        self._sync_pwnctl_contexts(reason="set_screen_saver")
+        return self.status_payload()
+
+    def set_aux_plugin(self, plugin_name, apply_now=True):
+        plugin_name = self._valid_aux_plugin(plugin_name, '')
+        if apply_now:
+            payload = self._apply_runtime_state(mode='auxiliary', aux_plugin=plugin_name, config={})
+            self._emit_pwnctl_event("aux_set", context="windows_aux", payload={"plugin": plugin_name})
+            self._sync_pwnctl_contexts(reason="set_aux_plugin")
+            return payload
+        self._emit_pwnctl_event("aux_set", context="windows_aux", payload={"plugin": plugin_name})
+        self._sync_pwnctl_contexts(reason="set_aux_plugin")
+        return self.status_payload()
+
+    def set_fps(self, fps, apply_now=True):
+        self.fps = self._sanitize_int(fps, self.fps, minimum=1)
+        controller = getattr(self, 'display_controller', None)
+        if apply_now and controller is not None:
+            controller.fps = self.fps
+        return self.status_payload()
+
+    def apply_display_config(self, mode=None, sub_mode=None, config=None):
+        if sub_mode is not None:
+            config = self.build_screen_saver_config(sub_mode, config)
+        elif mode is not None:
+            mode = self._valid_mode(mode, self.current_mode)
+            if mode == 'screen_saver':
+                config = self.build_screen_saver_config(self.current_screen_saver, config)
+            elif config is None:
+                config = {}
+        return self._apply_runtime_state(mode=mode, sub_mode=sub_mode, config=config)
+
+    def save_defaults(self, patch, apply_now=False):
+        clean = self._save_plugin_options(patch)
+        if apply_now:
+            return self.reset_runtime_to_defaults()
+        payload = self.status_payload()
+        payload['saved'] = clean
+        return payload
+
+    def _plugin_config(self):
+        try:
+            with open('/etc/pwnagotchi/config.toml', 'r', encoding='utf-8') as f:
+                config = toml.load(f)
+        except Exception:
+            config = copy.deepcopy(self._config) if isinstance(self._config, dict) else {}
+        config.setdefault('main', {}).setdefault('plugins', {}).setdefault('windows', {})
+        return config
+
+    def _save_plugin_options(self, patch):
+        config = self._plugin_config()
+        plugin_cfg = config['main']['plugins']['windows']
+        clean = {}
+        for key, value in (patch or {}).items():
+            if key in self.DEFAULT_OPTIONS:
+                clean[key] = value
+        plugin_cfg.update(clean)
+        save_config(config, '/etc/pwnagotchi/config.toml')
+        self.options.update(clean)
+        self._apply_defaults_from_options()
+        return clean
+
+    def status_payload(self):
+        controller = getattr(self, 'display_controller', None)
+        controller_running = False
+        if controller is not None:
+            try:
+                controller_running = bool(controller.is_running())
+            except Exception:
+                controller_running = True
+        return {
+            'ready': bool(self.ready),
+            'dispHijack': bool(self.dispHijack),
+            'current_mode': self.current_mode,
+            'current_screen_saver': self.current_screen_saver,
+            'current_aux_plugin': self.current_aux_plugin,
+            'runtime_config': copy.deepcopy(self.runtime_config),
+            'mode': self.display_config.get('mode', self.current_mode),
+            'sub_mode': self.display_config.get('sub_mode', self.current_screen_saver),
+            'default_mode': self.default_mode,
+            'default_screen_saver': self.default_screen_saver,
+            'default_aux_plugin': self.default_aux_plugin,
+            'options': self._safe_options(),
+            'screen_modes': list(self.screen_modes),
+            'screen_saver_modes': list(self.screen_saver_modes),
+            'aux_plugins': self.get_aux_plugins(),
+            'fps': self.fps,
+            'rotation': self.options.get('rotation', 0),
+            'controller_running': controller_running,
+            'controller_present': controller is not None,
+            'pending_restore_pwny': bool(self._pending_restore_pwny),
+            'windows_image_path': WINDOWS,
+        }
+
+    def config_payload(self):
+        return {
+            'defaults': self._safe_options(),
+            'runtime': {
+                'current_mode': self.current_mode,
+                'current_screen_saver': self.current_screen_saver,
+                'current_aux_plugin': self.current_aux_plugin,
+                'runtime_config': copy.deepcopy(self.runtime_config),
+            },
+            'capabilities': {
+                'screen_modes': list(self.screen_modes),
+                'screen_saver_modes': list(self.screen_saver_modes),
+                'aux_plugins': self.get_aux_plugins(),
+            },
+        }
+
+    def enable_second_screen(self):
+        self.dispHijack = True
+        self._pending_restore_pwny = False
+        self._emit_pwnctl_event("second_screen_enabled", context="windows_second_screen", payload=self.status_payload())
+        self._sync_pwnctl_contexts(reason="enable_second_screen")
+        return self.status_payload()
+
+    def disable_second_screen(self):
+        self.dispHijack = False
+        self._pending_restore_pwny = True
+        controller = getattr(self, 'display_controller', None)
+        if controller is not None:
+            try:
+                controller.stop()
+            except Exception:
+                logging.debug("[Windows] display controller stop failed", exc_info=True)
+            self.display_controller = None
+        self._sync_pwnctl_contexts(reason="disable_second_screen")
+        self._emit_pwnctl_event("second_screen_disabled", context="windows_second_screen", payload=self.status_payload())
+        return self.status_payload()
+
+    def toggle_second_screen(self):
+        payload = self.disable_second_screen() if self.dispHijack else self.enable_second_screen()
+        self._sync_pwnctl_contexts(reason="toggle_second_screen")
+        return payload
+
+    def _restore_pwny_display(self, ui=None, reason="manual"):
+        self.dispHijack = False
+        controller = getattr(self, 'display_controller', None)
+        if controller is not None:
+            try:
+                controller.stop()
+            except Exception:
+                logging.debug("[Windows] display controller stop failed during restore", exc_info=True)
+            self.display_controller = None
+        if ui is not None:
+            try:
+                image = Image.new('RGBA', (ui._width, ui._height), 'black')
+                image.save(WINDOWS)
+            except Exception:
+                pass
+            if hasattr(ui, '_enabled') and not ui._enabled:
+                ui._enabled = True
+            if self._config['ui']['display']['enabled']:
+                try:
+                    ui.init_display()
+                except Exception:
+                    logging.debug("[Windows] normal display init failed during restore", exc_info=True)
+                try:
+                    ui.update(force=True)
+                except TypeError:
+                    try:
+                        ui.update()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        self._pending_restore_pwny = False
+        logging.info("[Windows] Restored normal display (%s)", reason)
+        self._sync_pwnctl_contexts(reason="_restore_pwny_display")
+        return self.status_payload()
 
     def pos_convert(self, x, y, w, h, r=None, r0=None, r1=None):
         rot = self._config.get('ui', {}).get('display', {}).get('rotation', 0) if r is None else r
@@ -989,22 +1719,20 @@ class Windows(plugins.Plugin):
 
     def on_loaded(self):
         logging.info("[Windows] Loaded")
+        self._apply_defaults_from_options()
+        self.reset_runtime_to_defaults()
         self.ready = True
+        self._sync_pwnctl_contexts(reason="on_loaded")
+        try:
+            pwnctl = self._pwnctl()
+            if pwnctl and hasattr(pwnctl, "refresh_registry"):
+                pwnctl.refresh_registry()
+        except Exception as e:
+            logging.debug(f"[Windows] pwnctl registry refresh failed: {e}")
 
     def on_unload(self, ui):
         with ui._lock:
-            self.cleanup_display()
-            self.dispHijack = False
-            if not self.dispHijack:
-                if hasattr(self, 'display_controller') and self.display_controller:
-                    self.display_controller.stop()
-                if hasattr(ui, '_enabled') and not ui._enabled:
-                    ui._enabled = True
-                    logging.info("[Windows] Switched back to the original display.")
-        if self._config['ui']['display']['enabled']:
-            ui._enabled = True
-            ui.init_display()
-
+            self._restore_pwny_display(ui, reason="unload")
             self.cleanup_display()
 
         logging.info('[Windows] Unloaded')
@@ -1014,39 +1742,42 @@ class Windows(plugins.Plugin):
             if self.display_controller.is_running():
                 self.display_controller.stop()
             self.display_controller = None
-            del self.display_controller
 
     def on_ui_update(self, ui):
         try:
             if not self.dispHijack:
-                if hasattr(self, 'display_controller') and self.display_controller:
-                    self.display_controller.stop()
-                    self.display_controller = None
-                
-                image = Image.new('RGBA', (ui._width, ui._height), 'black')
-                image.save(WINDOWS)
+                if self._pending_restore_pwny or getattr(ui, '_enabled', True) is False or getattr(self, 'display_controller', None):
+                    self._restore_pwny_display(ui, reason="handoff")
+                return
 
-                if self._config['ui']['display']['enabled']:
-                    if hasattr(ui, '_enabled') and not ui._enabled:
-                        ui._enabled = True
-                        ui.init_display()
-                        logging.info("[Windows] Switched back to the original display.")
-            else:
+            if getattr(ui, '_enabled', True):
                 ui._enabled = False
-                if hasattr(self, 'display_controller') and not self.display_controller:
+            if not getattr(self, 'display_controller', None):
+                try:
                     logging.info("[Windows] Starting display hijack.")
                     self.display_controller = Window(self._config['ui']['display']['enabled'], self.fps, self._th_path)
                     self.display_controller.start(self._res, self.options.get('rotation', 0), self._color_mode[1])
-                    mode = self.display_config.get('mode', 'screen_saver')
-                    submode = self.display_config.get('sub_mode', 'show_logo')
-                    config = self.display_config.get('config', {})
-                    self.display_controller.set_mode(mode, submode, config)
-                #else:
-                #    logging.info("[Windows] Display controller is already running.")
+                    self.display_controller.set_mode(
+                        self.current_mode,
+                        self.current_screen_saver if self.current_mode == 'screen_saver' else None,
+                        self.runtime_config,
+                    )
+                    if self.current_aux_plugin and hasattr(self.display_controller, 'active_aux_plugin'):
+                        self.display_controller.active_aux_plugin = self.current_aux_plugin
+                except Exception:
+                    logging.error("[Windows] Failed to start display hijack.")
+                    logging.error(traceback.format_exc())
+                    self.dispHijack = False
+                    self._pending_restore_pwny = True
+                    self._restore_pwny_display(ui, reason="hijack_start_failed")
 
         except Exception as e:
             logging.info("non fatal error while updating Windows: %s" % e)
             logging.info(traceback.format_exc())
+            if self.dispHijack and not getattr(self, 'display_controller', None):
+                self.dispHijack = False
+                self._pending_restore_pwny = True
+                self._restore_pwny_display(ui, reason="ui_update_error")
 
     def process_actions(self, command):
         if command is None:
@@ -1058,46 +1789,112 @@ class Windows(plugins.Plugin):
             logging.info(f'Action: {action}')
             if action == 'switch_screen_mode':
                 try:
-                    self.display_config['mode'] = self.display_controller.switch_mode()
+                    mode = self.display_controller.switch_mode()
                 except:
-                    self.display_config['mode'] = self.screen_modes[(self.screen_modes.index(self.display_config['mode']) + 1) % len(self.screen_modes)]
+                    mode = self.screen_modes[(self.screen_modes.index(self.current_mode) + 1) % len(self.screen_modes)]
+                self._apply_runtime_state(mode=mode)
             elif action == 'switch_screen_mode_reverse':
                 try:
-                    self.display_config['mode'] = self.display_controller.switch_mode('previous')
+                    mode = self.display_controller.switch_mode('previous')
                 except:
-                    self.display_config['mode'] = self.screen_modes[(self.screen_modes.index(self.display_config['mode']) - 1) % len(self.screen_modes)]
+                    mode = self.screen_modes[(self.screen_modes.index(self.current_mode) - 1) % len(self.screen_modes)]
+                self._apply_runtime_state(mode=mode)
             elif action == 'enable_second_screen':
-                self.dispHijack = True
+                self.enable_second_screen()
             elif action == 'disable_second_screen':
                 logging.info('disable second screen')
-                self.dispHijack = False
+                self.disable_second_screen()
             elif action == 'next_screen_saver':
                 logging.info('next screen saver')
                 try:
-                    self.display_config['sub_mode'] = self.display_controller.switch_screen_saver_submode('next')
+                    sub_mode = self.display_controller.switch_screen_saver_submode('next')
                 except:
-                    self.display_config['sub_mode'] = self.screen_saver_modes[(self.screen_saver_modes.index(self.display_config['sub_mode']) + 1) % len(self.screen_saver_modes)]
+                    sub_mode = self.screen_saver_modes[(self.screen_saver_modes.index(self.current_screen_saver) + 1) % len(self.screen_saver_modes)]
+                self.set_screen_saver(sub_mode, apply_now=True)
             elif action == 'previous_screen_saver':
                 logging.info('previous screen saver')
                 try:
-                    self.display_config['sub_mode'] =  self.display_controller.switch_screen_saver_submode('previous')
+                    sub_mode = self.display_controller.switch_screen_saver_submode('previous')
                 except:
-                    self.display_config['sub_mode'] = self.screen_saver_modes[(self.screen_saver_modes.index(self.display_config['sub_mode']) + 1) % len(self.screen_saver_modes)]
+                    sub_mode = self.screen_saver_modes[(self.screen_saver_modes.index(self.current_screen_saver) - 1) % len(self.screen_saver_modes)]
+                self.set_screen_saver(sub_mode, apply_now=True)
             elif action == 'next_aux':
                 logging.info('next aux')
                 try:
-                    self.display_controller.switch_aux('next')
+                    aux = self.display_controller.switch_aux('next')
                 except Exception as e:
                     logging.error(f"Error switching aux: {e}")
+                    aux_list = self.get_aux_plugins()
+                    aux = aux_list[0] if aux_list else ''
+                self.set_aux_plugin(aux, apply_now=True)
             elif action == 'previous_aux':
                 logging.info('previous aux')
                 try:
-                    self.display_controller.switch_aux('previous')
+                    aux = self.display_controller.switch_aux('previous')
                 except Exception as e:
                     logging.error(f"Error switching aux: {e}")
+                    aux_list = self.get_aux_plugins()
+                    aux = aux_list[-1] if aux_list else ''
+                self.set_aux_plugin(aux, apply_now=True)
+            self._sync_pwnctl_contexts(reason="process_actions")
+            self._emit_pwnctl_event("action_processed", payload={
+                "action": action,
+                "mode": mode,
+                "dispHijack": bool(self.dispHijack),
+                "current_mode": self.current_mode,
+                "current_screen_saver": self.current_screen_saver,
+                "current_aux_plugin": self.current_aux_plugin,
+            })
 
         except Exception as e:
             logging.error(f'error while processing menu command: {e}')
+
+    def start_screen_saver(self, sub_mode=None, config=None):
+        previous = {
+            'dispHijack': bool(self.dispHijack),
+            'current_mode': self.current_mode,
+            'current_screen_saver': self.current_screen_saver,
+            'current_aux_plugin': self.current_aux_plugin,
+            'runtime_config': copy.deepcopy(self.runtime_config),
+            'display_config': copy.deepcopy(self.display_config),
+        }
+        chosen_sub_mode = self._valid_screen_saver(
+            sub_mode or self.default_screen_saver or self.current_screen_saver or 'show_logo',
+            'show_logo',
+        )
+        runtime_config = self.build_screen_saver_config(chosen_sub_mode, config)
+        self.dispHijack = True
+        self._pending_restore_pwny = False
+        self._apply_runtime_state(mode='screen_saver', sub_mode=chosen_sub_mode, config=runtime_config)
+        self._sync_pwnctl_contexts(reason="start_screen_saver")
+        logging.info("[Windows] Screen saver started")
+        return previous
+
+    def stop_screen_saver(self, previous=None):
+        if previous and isinstance(previous, dict):
+            self.dispHijack = bool(previous.get('dispHijack', False))
+            self.current_mode = self._valid_mode(previous.get('current_mode'), self.default_mode)
+            self.current_screen_saver = self._valid_screen_saver(previous.get('current_screen_saver'), self.default_screen_saver)
+            self.current_aux_plugin = previous.get('current_aux_plugin', self.default_aux_plugin or None)
+            self.runtime_config = copy.deepcopy(previous.get('runtime_config', {}))
+            self._sync_display_config_from_runtime()
+            if self.dispHijack:
+                self._pending_restore_pwny = False
+            else:
+                self.disable_second_screen()
+            if self.dispHijack and getattr(self, 'display_controller', None):
+                if self.current_aux_plugin and hasattr(self.display_controller, 'active_aux_plugin'):
+                    self.display_controller.active_aux_plugin = self.current_aux_plugin
+                self.display_controller.set_mode(
+                    self.current_mode,
+                    self.current_screen_saver if self.current_mode == 'screen_saver' else None,
+                    self.runtime_config,
+                )
+        else:
+            self.disable_second_screen()
+        self._sync_pwnctl_contexts(reason="stop_screen_saver")
+        logging.info("[Windows] Screen saver stopped")
+        return True
 
     def ui2(self):
         try:
@@ -1120,17 +1917,37 @@ class Windows(plugins.Plugin):
 
     def on_pwnctl(self, cmd):
         if cmd == 'help':
-            return "Windows commands: second_screen, display_pwny, display_next, display_previous, screen_saver_next, screen_saver_previous, aux_next, aux_prev"
+            return "Windows commands: status, second_screen, display_pwny, display_next, display_previous, screen_saver_next, screen_saver_previous, screen_saver_start, screen_saver_stop, aux_next, aux_prev, set_mode:<mode>, set_saver:<sub_mode>, set_aux:<plugin>, reset_runtime_defaults"
+        if cmd == 'status':
+            return json.dumps(self.status_payload())
+        if cmd and cmd.startswith('set_mode:'):
+            self.set_display_mode(cmd.split(':', 1)[1], apply_now=True)
+            return "OK"
+        if cmd and cmd.startswith('set_saver:'):
+            self.set_screen_saver(cmd.split(':', 1)[1], apply_now=True)
+            return "OK"
+        if cmd and cmd.startswith('set_aux:'):
+            self.set_aux_plugin(cmd.split(':', 1)[1], apply_now=True)
+            return "OK"
+        if cmd == 'reset_runtime_defaults':
+            self.reset_runtime_to_defaults()
+            return "OK"
         
         if cmd == 'second_screen':
-             self.dispHijack = not self.dispHijack
+             self.toggle_second_screen()
              return "Second screen toggled"
         elif cmd == 'display_pwny':
-             self.dispHijack = False
+             self.disable_second_screen()
              return "Pwny screen enabled"
         elif cmd == 'display_hijack':
-             self.dispHijack = True
+             self.enable_second_screen()
              return "Second screen enabled"
+        elif cmd == 'screen_saver_start':
+             self.start_screen_saver()
+             return "Screen saver started"
+        elif cmd == 'screen_saver_stop':
+             self.stop_screen_saver()
+             return "Screen saver stopped"
         
         action_map = {
             'display_next': 'switch_screen_mode',
@@ -1156,6 +1973,9 @@ class Windows(plugins.Plugin):
                 ("Prev Mode", {"action": "pwnctl", "plugin": "windows", "cmd": "display_previous"}),
                 ("Next Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_next"}),
                 ("Prev Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_previous"}),
+                ("Start Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_start"}),
+                ("Stop Saver", {"action": "pwnctl", "plugin": "windows", "cmd": "screen_saver_stop"}),
+                ("Reset Defaults", {"action": "pwnctl", "plugin": "windows", "cmd": "reset_runtime_defaults"}),
                 ("Next Aux", {"action": "pwnctl", "plugin": "windows", "cmd": "aux_next"}),
                 ("Prev Aux", {"action": "pwnctl", "plugin": "windows", "cmd": "aux_prev"}),
             ]
@@ -1171,18 +1991,24 @@ class Windows(plugins.Plugin):
                         INDEX,)
                 elif path == "ui2":
                     return self.ui2()
+                elif path == "status":
+                    return jsonify(self.status_payload())
+                elif path == "config":
+                    return jsonify(self.config_payload())
                 elif path == "display_hijack":
                     try:
-                        self.dispHijack = True
-                        return json.dumps({"message": "Hijack display successful!", "status": 200})
+                        payload = self.enable_second_screen()
+                        payload.update({"message": "Hijack display successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
                         return "Display hijacking error", 500 
                 elif path == "display_pwny":
                     try:
-                        self.dispHijack = False
-                        return json.dumps({"message": "Pwny change successful!", "status": 200})
+                        payload = self.disable_second_screen()
+                        payload.update({"message": "Pwny change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
@@ -1190,8 +2016,9 @@ class Windows(plugins.Plugin):
                 elif path == "second_screen":
                     logging.warning("second_screen")
                     try:
-                        self.dispHijack = not self.dispHijack
-                        return json.dumps({"message": "Second screen change successful!", "status": 200})
+                        payload = self.toggle_second_screen()
+                        payload.update({"message": "Second screen change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
@@ -1199,7 +2026,9 @@ class Windows(plugins.Plugin):
                 elif path == "display_next":
                     try:
                         self.process_actions({"action": "switch_screen_mode"})
-                        return json.dumps({"message": "Display change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Display change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
@@ -1207,7 +2036,9 @@ class Windows(plugins.Plugin):
                 elif path == "display_previous":
                     try:
                         self.process_actions({"action": "switch_screen_mode_reverse"})
-                        return json.dumps({"message": "Display change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Display change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
@@ -1215,7 +2046,9 @@ class Windows(plugins.Plugin):
                 elif path == "screen_saver_next":
                     try:
                         self.process_actions({"action": "next_screen_saver"})
-                        return json.dumps({"message": "Screen saver change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Screen saver change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                             logging.error(ex)
                             logging.error(traceback.format_exc())
@@ -1223,15 +2056,39 @@ class Windows(plugins.Plugin):
                 elif path == "screen_saver_previous":
                     try:
                         self.process_actions({"action": "previous_screen_saver"})
-                        return json.dumps({"message": "Screen saver change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Screen saver change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                             logging.error(ex)
                             logging.error(traceback.format_exc())
                             return "previous screen saver error", 500
+                elif path == "screen_saver_start":
+                    try:
+                        self.start_screen_saver()
+                        payload = self.status_payload()
+                        payload.update({"message": "Screen saver started!", "status": 200})
+                        return jsonify(payload)
+                    except Exception as ex:
+                        logging.error(ex)
+                        logging.error(traceback.format_exc())
+                        return "Screen saver start error", 500
+                elif path == "screen_saver_stop":
+                    try:
+                        self.stop_screen_saver()
+                        payload = self.status_payload()
+                        payload.update({"message": "Screen saver stopped!", "status": 200})
+                        return jsonify(payload)
+                    except Exception as ex:
+                        logging.error(ex)
+                        logging.error(traceback.format_exc())
+                        return "Screen saver stop error", 500
                 elif path == "aux_next":
                     try:
                         self.process_actions({"action": "next_aux"})
-                        return json.dumps({"message": "Aux change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Aux change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
@@ -1239,15 +2096,66 @@ class Windows(plugins.Plugin):
                 elif path == "aux_prev":
                     try:
                         self.process_actions({"action": "previous_aux"})
-                        return json.dumps({"message": "Aux change successful!", "status": 200})
+                        payload = self.status_payload()
+                        payload.update({"message": "Aux change successful!", "status": 200})
+                        return jsonify(payload)
                     except Exception as ex:
                         logging.error(ex)
                         logging.error(traceback.format_exc())
                         return "Aux previous error", 500
                     
-            #elif request.method == "POST":
+            elif request.method == "POST":
+                try:
+                    data = request.get_json(silent=True) or {}
+                except TypeError:
+                    data = request.get_json() or {}
+                if path == "save_config":
+                    patch = data.get('options') or data
+                    return jsonify(self.save_defaults(patch, apply_now=bool(data.get('reset_runtime') or data.get('apply_now'))))
+                elif path == "set_mode":
+                    mode = data.get('mode')
+                    if data.get('persist'):
+                        self._save_plugin_options({'default_mode': self._valid_mode(mode, self.default_mode)})
+                    payload = self.set_display_mode(mode, apply_now=bool(data.get('apply_now', True)))
+                    return jsonify(payload)
+                elif path == "set_screen_saver":
+                    sub_mode = self._valid_screen_saver(data.get('sub_mode'), self.current_screen_saver)
+                    patch = data.get('options_patch') or {}
+                    if data.get('persist'):
+                        patch['default_screen_saver'] = sub_mode
+                        self._save_plugin_options(patch)
+                    if data.get('apply_now', True):
+                        return jsonify(self.set_screen_saver(sub_mode, apply_now=True, options_patch=patch))
+                    return jsonify(self.status_payload())
+                elif path == "set_aux":
+                    plugin_name = self._valid_aux_plugin(data.get('plugin'), '')
+                    if data.get('persist'):
+                        self._save_plugin_options({'default_aux_plugin': plugin_name})
+                    if data.get('apply_now', True):
+                        return jsonify(self.set_aux_plugin(plugin_name, apply_now=True))
+                    return jsonify(self.status_payload())
+                elif path == "set_second_screen":
+                    payload = self.enable_second_screen() if data.get('enabled') else self.disable_second_screen()
+                    return jsonify(payload)
+                elif path == "screen_saver_start":
+                    self.start_screen_saver(sub_mode=data.get('sub_mode'), config=data.get('config'))
+                    return jsonify(self.status_payload())
+                elif path == "screen_saver_stop":
+                    self.stop_screen_saver()
+                    return jsonify(self.status_payload())
+                elif path == "reset_runtime_defaults":
+                    return jsonify(self.reset_runtime_to_defaults())
+                elif path == "apply_runtime":
+                    if 'fps' in data:
+                        self.set_fps(data.get('fps'), apply_now=True)
+                    return jsonify(self.apply_display_config(
+                        mode=data.get('mode'),
+                        sub_mode=data.get('sub_mode'),
+                        config=data.get('config'),
+                    ))
+            return jsonify({"error": "unknown route", "path": path}), 404
 
         except Exception as e:
             logging.info(f"Error in webhook: {str(e)}")
             logging.info(traceback.format_exc())
-            return None
+            return jsonify({"error": str(e), "path": path}), 500
